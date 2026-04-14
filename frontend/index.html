@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Music Transformer</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════
+       UPLOAD FORM
+       POST multipart/form-data → /generate
+       Fields: user_id, genre, mood, instrument,
+               temperature, top_p, audio (file)
+  ════════════════════════════════════════════════ -->
+  <form id="generateForm" enctype="multipart/form-data">
+    <input  type="hidden" name="user_id" value="guest" />
+
+    <label>Género
+      <select name="genre">
+        <option>FUNK</option><option>ROCK</option><option>POP</option>
+        <option>JAZZ</option><option>LATIN</option>
+        <option>CLASSICAL</option><option>ELECTRONIC</option>
+      </select>
+    </label>
+
+    <label>Mood
+      <select name="mood">
+        <option>HAPPY</option><option>SAD</option><option>DARK</option>
+        <option>RELAXED</option><option>TENSE</option>
+      </select>
+    </label>
+
+    <label>Instrumento a generar
+      <select name="instrument">
+        <option>BASS</option><option>PIANO</option><option>GUITAR</option>
+      </select>
+    </label>
+
+    <label>Temperatura <input type="number" name="temperature" value="1.0" step="0.1" min="0.1" max="2.0" /></label>
+    <label>Top-p       <input type="number" name="top_p"       value="0.9" step="0.05" min="0.1" max="1.0" /></label>
+
+    <label>Audio (WAV / MP3)
+      <input type="file" name="audio" accept=".wav,.mp3,.flac" required />
+    </label>
+
+    <button type="submit">Generar acompañamiento</button>
+  </form>
+
+  <!-- ═══════════════════════════════════════════════
+       STATUS PANEL — populated by main.js via polling
+       GET /generation/:id   → JSON { status, output_xml_path, ... }
+  ════════════════════════════════════════════════ -->
+  <div id="statusPanel" hidden>
+    <p id="statusText"></p>
+    <a id="downloadXml"  hidden href="#">Descargar partitura (.xml)</a>
+    <a id="downloadMidi" hidden href="#">Descargar MIDI</a>
+    <p id="errorMsg" style="color:red"></p>
+  </div>
+
+  <script src="/static/js/main.js"></script>
+</body>
+</html>

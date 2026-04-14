@@ -1,0 +1,74 @@
+services:
+  db:
+    image: postgres:15
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: music_transformer
+      POSTGRES_USER: mtuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtuser -d music_transformer"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./services/api
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: postgresql://mtuser:${POSTGRES_PASSWORD:-password}@db:5432/music_transformer
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./frontend:/app/frontend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  audio_worker:
+    build: ./services/audio_worker
+    environment:
+      DATABASE_URL: postgresql://mtuser:${POSTGRES_PASSWORD:-password}@db:5432/music_transformer
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./music-transformer/src:/app/mt_src
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ml_worker:
+    build: ./services/ml_worker
+    environment:
+      DATABASE_URL: postgresql://mtuser:${POSTGRES_PASSWORD:-password}@db:5432/music_transformer
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
