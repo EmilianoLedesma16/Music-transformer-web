@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: music_transformer
       POSTGRES_USER: mtuser
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_local}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,49 +26,57 @@ services:
   api:
     build: ./services/api
     ports: ["8000:8000"]
-    environment:
-      DATABASE_URL: postgresql://mtuser:${POSTGRES_PASSWORD:-password}@db:5432/music_transformer
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    env_file: .env
     volumes:
-      - ./data:/app/data
       - ./frontend:/app/frontend
+      - shared_data:/app/data
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  audio_worker:
-    build: ./services/audio_worker
-    environment:
-      DATABASE_URL: postgresql://mtuser:${POSTGRES_PASSWORD:-password}@db:5432/music_transformer
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-    volumes:
-      - ./data:/app/data
-      - ./checkpoints:/app/checkpoints
-      - ./music-transformer/src:/app/mt_src
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: on-failure
 
   ml_worker:
     build: ./services/ml_worker
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://mtuser:${POSTGRES_PASSWORD:-password}@db:5432/music_transformer
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      PYTHONPATH: "/app"
     volumes:
-      - ./data:/app/data
-      - ./checkpoints:/app/checkpoints
+      - shared_data:/app/data
+      - panns_data:/root/panns_data    # persiste el checkpoint CNN14 (~325 MB)
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: on-failure
+
+  transcription_worker:
+    build: ./services/transcription_worker
+    env_file: .env
+    environment:
+      PYTHONPATH: "/app/mt_src:/app"
+    volumes:
+      - shared_data:/app/data
+      - ./music-transformer/src:/app/mt_src
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: on-failure
+
+  generation_worker:
+    build: ./services/generation_worker
+    env_file: .env
+    environment:
+      PYTHONPATH: "/app/mt_src:/app"
+    volumes:
+      - shared_data:/app/data
+      - ./music-transformer/checkpoints:/app/checkpoints
+      - ./music-transformer/src:/app/mt_src
+      - ./music-transformer/data/tokens:/app/mt_data/tokens
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: on-failure
 
 volumes:
   postgres_data:
+  shared_data:
+  panns_data:

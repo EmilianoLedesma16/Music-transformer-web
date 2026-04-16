@@ -1,0 +1,12 @@
+# CRÍTICO: setuptools<70 debe ir primero para que pretty_midi instale bien
+setuptools<70.0.0
+celery[redis]==5.4.0
+redis==5.0.6
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+# Basic Pitch requiere TensorFlow (CPU-only, ~500 MB)
+tensorflow-cpu==2.15.0
+basic-pitch==0.4.0
+pretty_midi==0.2.10
+numpy==1.26.4
+tqdm

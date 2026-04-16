@@ -8,30 +8,30 @@ celery_app = Celery("ml_tasks", broker=BROKER, backend=BACKEND)
 
 
 @celery_app.task(name="ml_tasks.validate_instrument")
-def validate_instrument(gen_id, audio_path, genre, mood, instrument,
-                        temperature, top_p):
-    from db import update_generation
+def validate_instrument(creacion_id: int, audio_path: str, genre: str, mood: str,
+                        instrument: str, temperature: float, top_p: float):
+    from db import update_creacion
     from classifier import classify_instrument
 
-    update_generation(gen_id, status="VALIDATING")
+    update_creacion(creacion_id, status="VALIDATING")
 
     detected, is_valid = classify_instrument(audio_path)
-    update_generation(gen_id, detected_instrument=detected)
+    update_creacion(creacion_id, detected_instrument=detected)
 
     if not is_valid:
-        update_generation(
-            gen_id,
+        update_creacion(
+            creacion_id,
             status        = "FAILED",
             error_message = (
-                "Instrument '{}' not supported. "
-                "Only piano, guitar and bass are accepted.".format(detected)
+                f"Instrumento detectado '{detected}' no está soportado. "
+                "Solo se acepta piano, guitar o bass."
             ),
         )
         return
 
-    # Chain to audio_worker
+    # Encadenar al transcription_worker
     celery_app.send_task(
-        "audio_tasks.run_pipeline",
-        args=[gen_id, audio_path, genre, mood, instrument, temperature, top_p],
-        queue="audio_queue",
+        "transcription_tasks.transcribe",
+        args=[creacion_id, audio_path, genre, mood, instrument, temperature, top_p],
+        queue="transcription_queue",
     )
