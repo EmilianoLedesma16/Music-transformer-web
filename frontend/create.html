@@ -1,160 +1,181 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ByteBeat — Nueva Creación</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ByteBeat — Nueva creación</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"/>
+  <link rel="stylesheet" href="/static/css/app.css"/>
+  <style>
+    .progress-step {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .6rem .85rem;
+      border-radius: .6rem;
+      font-size: .85rem;
+      color: rgba(255,255,255,.45);
+      transition: color .3s;
+    }
+    .progress-step.active { color: var(--wood-amber); }
+    .progress-step.done   { color: #76e2b3; }
+    .step-dot {
+      width: .6rem; height: .6rem;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .spinner-wood {
+      width: 1.1rem; height: 1.1rem;
+      border: 2px solid rgba(246,178,107,.3);
+      border-top-color: var(--wood-amber);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #statusPanel { display: none; }
+  </style>
 </head>
 <body>
 
-  <!-- Navbar -->
-  <nav class="navbar navbar-dark bb-navbar px-3">
-    <a href="/dashboard.html" class="navbar-brand fw-bold bb-brand">
-      <i class="bi bi-arrow-left me-2"></i>ByteBeat
-    </a>
-    <span class="text-white small" id="navUser"></span>
-  </nav>
-
-  <div class="container py-4" style="max-width: 640px;">
-    <h2 class="mb-4">Nueva Creación</h2>
-
-    <!-- ── Formulario ── -->
-    <form id="createForm" class="bb-create-form">
-
-      <!-- Upload zona -->
-      <div class="mb-4">
-        <label class="form-label fw-semibold">Archivo de audio</label>
-        <div class="bb-drop-zone" id="dropZone">
-          <i class="bi bi-cloud-upload display-5 text-muted"></i>
-          <p class="mt-2 mb-1 text-muted">Arrastra tu audio aquí o haz clic</p>
-          <p class="text-muted small">WAV · MP3 · FLAC · OGG (máx. 50 MB)</p>
-          <input type="file" id="audioInput" name="audio" accept=".wav,.mp3,.flac,.ogg" class="d-none" required />
-          <div id="fileInfo" class="mt-2 fw-semibold text-primary d-none"></div>
-        </div>
+  <nav class="navbar navbar-wood navbar-dark sticky-top">
+    <div class="container">
+      <div class="d-flex align-items-center gap-2">
+        <img src="/static/img/logo.png" alt="ByteBeat" height="36" onerror="this.style.display='none'"/>
+        <strong class="text-white fs-5">ByteBeat</strong>
       </div>
-
-      <div class="row g-3 mb-3">
-        <div class="col-sm-4">
-          <label class="form-label fw-semibold">Género</label>
-          <select name="genre" class="form-select">
-            <option value="FUNK">Funk</option>
-            <option value="ROCK">Rock</option>
-            <option value="POP">Pop</option>
-            <option value="JAZZ">Jazz</option>
-            <option value="LATIN">Latin</option>
-            <option value="CLASSICAL">Classical</option>
-            <option value="ELECTRONIC">Electronic</option>
-          </select>
-        </div>
-        <div class="col-sm-4">
-          <label class="form-label fw-semibold">Mood</label>
-          <select name="mood" class="form-select">
-            <option value="HAPPY">Happy</option>
-            <option value="SAD">Sad</option>
-            <option value="DARK">Dark</option>
-            <option value="RELAXED">Relaxed</option>
-            <option value="TENSE">Tense</option>
-          </select>
-        </div>
-        <div class="col-sm-4">
-          <label class="form-label fw-semibold">Instrumento</label>
-          <select name="instrument" class="form-select">
-            <option value="BASS">Bajo</option>
-            <option value="PIANO">Piano</option>
-            <option value="GUITAR">Guitarra</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Parámetros avanzados (colapsable) -->
-      <div class="mb-4">
-        <button type="button" class="btn btn-sm btn-link ps-0 text-muted"
-                data-bs-toggle="collapse" data-bs-target="#advancedParams">
-          <i class="bi bi-sliders me-1"></i>Parámetros avanzados
+      <div class="d-flex align-items-center gap-3">
+        <a href="/dashboard.html" class="btn btn-glass btn-sm">
+          <i class="bi bi-arrow-left me-1"></i>Mis creaciones
+        </a>
+        <button class="btn btn-glass btn-sm" id="logoutBtn">
+          <i class="bi bi-box-arrow-right me-1"></i>Salir
         </button>
-        <div class="collapse" id="advancedParams">
-          <div class="card card-body bg-light mt-2">
-            <div class="mb-3">
-              <label class="form-label small">
-                Temperatura: <strong id="tempVal">0.9</strong>
-              </label>
-              <input type="range" name="temperature" class="form-range"
-                     min="0.5" max="1.5" step="0.1" value="0.9"
-                     oninput="document.getElementById('tempVal').textContent=this.value" />
-              <div class="d-flex justify-content-between text-muted" style="font-size:.75rem">
-                <span>Conservador</span><span>Creativo</span>
-              </div>
-            </div>
-            <div>
-              <label class="form-label small">
-                Top-p: <strong id="topPVal">0.9</strong>
-              </label>
-              <input type="range" name="top_p" class="form-range"
-                     min="0.5" max="1.0" step="0.05" value="0.9"
-                     oninput="document.getElementById('topPVal').textContent=this.value" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
-        <i class="bi bi-magic me-2"></i>Generar acompañamiento
-      </button>
-    </form>
-
-    <!-- ── Panel de progreso (aparece tras envío) ── -->
-    <div id="progressPanel" class="d-none mt-5">
-      <h5 class="mb-3">Procesando tu creación…</h5>
-
-      <!-- Steps -->
-      <div class="bb-steps mb-4">
-        <div class="bb-step" id="step-VALIDATING">
-          <div class="bb-step-icon"><i class="bi bi-search"></i></div>
-          <span>Validando instrumento (CNN14)</span>
-        </div>
-        <div class="bb-step" id="step-TRANSCRIBING">
-          <div class="bb-step-icon"><i class="bi bi-file-earmark-music"></i></div>
-          <span>Transcribiendo a MIDI</span>
-        </div>
-        <div class="bb-step" id="step-GENERATING">
-          <div class="bb-step-icon"><i class="bi bi-cpu"></i></div>
-          <span>Generando acompañamiento (~25s)</span>
-        </div>
-        <div class="bb-step" id="step-COMPLETED">
-          <div class="bb-step-icon"><i class="bi bi-check-circle"></i></div>
-          <span>Completado</span>
-        </div>
-      </div>
-
-      <!-- Resultado -->
-      <div id="resultBlock" class="d-none">
-        <div class="alert alert-success">
-          <h6 class="alert-heading">¡Listo! Tu acompañamiento está generado.</h6>
-          <div class="d-flex gap-2 mt-2 flex-wrap">
-            <a id="midiDownload" href="#" class="btn btn-sm btn-outline-primary" target="_blank">
-              <i class="bi bi-file-music me-1"></i>Descargar MIDI
-            </a>
-            <a id="xmlDownload" href="#" class="btn btn-sm btn-outline-success" target="_blank">
-              <i class="bi bi-file-earmark-music me-1"></i>Descargar Partitura
-            </a>
-          </div>
-          <p class="mt-2 mb-0 small text-muted" id="resultStats"></p>
-        </div>
-        <a href="/dashboard.html" class="btn btn-link">Ver todas mis creaciones</a>
-      </div>
-
-      <!-- Error -->
-      <div id="errorBlock" class="d-none">
-        <div class="alert alert-danger" id="errorMsg"></div>
-        <button class="btn btn-outline-secondary" onclick="location.reload()">Intentar de nuevo</button>
       </div>
     </div>
-  </div>
+  </nav>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <main class="container py-5" style="max-width:760px;">
+    <h2 class="text-white mb-1">Nueva creación</h2>
+    <p class="text-soft mb-4">Sube tu audio y configura el acompañamiento que ByteBeat generará.</p>
+
+    <!-- Upload form -->
+    <div id="formPanel">
+      <div id="alertBox" class="d-none mb-3"></div>
+
+      <form id="createForm" novalidate>
+
+        <!-- Drop zone -->
+        <div class="upload-zone text-center p-5 mb-4" id="dropZone">
+          <i class="bi bi-cloud-arrow-up display-4 text-amber mb-2 d-block"></i>
+          <p class="text-white mb-1">Arrastra tu archivo de audio aquí</p>
+          <p class="text-soft small mb-3">WAV, MP3, OGG, FLAC o M4A · máx. 50 MB</p>
+          <button type="button" class="btn btn-glass btn-sm px-3" id="browseBtn">
+            <i class="bi bi-folder2-open me-1"></i>Explorar
+          </button>
+          <input type="file" id="audioInput" accept=".wav,.mp3,.ogg,.flac,.m4a" class="d-none" required/>
+          <p id="fileName" class="text-amber small mt-2 mb-0 d-none"></p>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-sm-4">
+            <label class="form-label text-white-50">Género</label>
+            <select class="form-select" id="genre">
+              <option value="ROCK">Rock</option>
+              <option value="POP" selected>Pop</option>
+              <option value="FUNK">Funk</option>
+              <option value="JAZZ">Jazz</option>
+              <option value="LATIN">Latín</option>
+              <option value="CLASSICAL">Clásica</option>
+              <option value="ELECTRONIC">Electrónica</option>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label text-white-50">Mood</label>
+            <select class="form-select" id="mood">
+              <option value="HAPPY" selected>Alegre</option>
+              <option value="SAD">Triste</option>
+              <option value="DARK">Oscuro</option>
+              <option value="RELAXED">Relajado</option>
+              <option value="TENSE">Tenso</option>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label text-white-50">Instrumento esperado</label>
+            <select class="form-select" id="instrument">
+              <option value="GUITAR" selected>Guitarra</option>
+              <option value="BASS">Bajo</option>
+              <option value="PIANO">Piano</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-sm-6">
+            <label class="form-label text-white-50 d-flex justify-content-between">
+              Temperatura <span id="tempVal" class="text-amber">0.9</span>
+            </label>
+            <input type="range" class="form-range" id="temperature" min="0.1" max="1.5" step="0.05" value="0.9"/>
+            <small class="text-soft">Controla la creatividad de la generación</small>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label text-white-50 d-flex justify-content-between">
+              Top-p <span id="topPVal" class="text-amber">0.9</span>
+            </label>
+            <input type="range" class="form-range" id="topP" min="0.1" max="1.0" step="0.05" value="0.9"/>
+            <small class="text-soft">Controla la diversidad de muestreo</small>
+          </div>
+        </div>
+
+        <button class="btn btn-wood w-100 py-2 fs-5" type="submit" id="submitBtn">
+          <i class="bi bi-magic me-2"></i>Generar acompañamiento
+        </button>
+      </form>
+    </div>
+
+    <!-- Status panel (shown after submit) -->
+    <div id="statusPanel" class="card card-glass p-4 p-md-5 text-center">
+      <h4 class="text-white mb-4">Procesando tu audio…</h4>
+
+      <div class="d-flex flex-column align-items-start gap-1 mx-auto mb-4" style="max-width:300px;">
+        <div class="progress-step" id="step-validating">
+          <span class="step-dot"></span>Validando instrumento (CNN14)
+        </div>
+        <div class="progress-step" id="step-transcribing">
+          <span class="step-dot"></span>Transcribiendo a MIDI
+        </div>
+        <div class="progress-step" id="step-generating">
+          <span class="step-dot"></span>Generando acompañamiento
+        </div>
+        <div class="progress-step" id="step-completed">
+          <span class="step-dot"></span>Completado
+        </div>
+      </div>
+
+      <p class="text-soft small mb-4" id="statusMsg">Este proceso puede tardar unos minutos.</p>
+
+      <div id="resultLinks" class="d-none">
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+          <a id="midiLink" href="#" class="btn btn-glass btn-sm d-none">
+            <i class="bi bi-file-music me-1"></i>Descargar MIDI
+          </a>
+          <a id="xmlLink" href="#" class="btn btn-glass btn-sm d-none">
+            <i class="bi bi-file-earmark-code me-1"></i>Descargar MusicXML
+          </a>
+        </div>
+        <div class="mt-4">
+          <a href="/dashboard.html" class="btn btn-wood px-5">Ver mis creaciones</a>
+        </div>
+      </div>
+
+      <div id="errorPanel" class="d-none">
+        <div class="alert alert-danger" id="errorMsg"></div>
+        <button class="btn btn-glass" onclick="location.reload()">Intentar de nuevo</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
   <script src="/static/js/auth.js"></script>
   <script src="/static/js/api.js"></script>
   <script src="/static/js/create.js"></script>

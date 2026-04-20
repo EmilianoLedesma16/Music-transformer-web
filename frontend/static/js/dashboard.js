@@ -1,132 +1,146 @@
-/**
- * Dashboard — lista y polling de creaciones.
- * Requiere: auth.js, api.js
- */
 Auth.requireAuth();
 
-const STATUS_LABELS = {
-  PENDING:      { text: 'Pendiente',    cls: 'status-PENDING' },
-  VALIDATING:   { text: 'Validando',    cls: 'status-VALIDATING' },
-  TRANSCRIBING: { text: 'Transcribiendo', cls: 'status-TRANSCRIBING' },
-  GENERATING:   { text: 'Generando',    cls: 'status-GENERATING' },
-  COMPLETED:    { text: 'Completado',   cls: 'status-COMPLETED' },
-  FAILED:       { text: 'Error',        cls: 'status-FAILED' },
-};
+const deleteModal    = new bootstrap.Modal(document.getElementById("deleteModal"));
+let pendingDeleteId  = null;
+let pollingIntervals = {};
 
-const IN_PROGRESS = new Set(['PENDING', 'VALIDATING', 'TRANSCRIBING', 'GENERATING']);
+document.getElementById("logoutBtn").addEventListener("click", Auth.logout);
+document.getElementById("refreshBtn").addEventListener("click", loadCreaciones);
 
-let creaciones = [];
-let pollTimer  = null;
+document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
+  if (!pendingDeleteId) return;
+  try {
+    await API.deleteCreacion(pendingDeleteId);
+    deleteModal.hide();
+    loadCreaciones();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+function statusBadge(status) {
+  const labels = {
+    PENDING:      ["Pendiente",     "badge-pending"],
+    VALIDATING:   ["Validando",     "badge-validating"],
+    TRANSCRIBING: ["Transcribiendo","badge-transcribing"],
+    GENERATING:   ["Generando",     "badge-generating"],
+    COMPLETED:    ["Completado",    "badge-completed"],
+    FAILED:       ["Error",         "badge-failed"],
+  };
+  const [label, cls] = labels[status] || [status, "badge-pending"];
+  return `<span class="badge badge-status ${cls}">${label}</span>`;
+}
+
+function isInProgress(status) {
+  return ["PENDING","VALIDATING","TRANSCRIBING","GENERATING"].includes(status);
+}
+
+function renderCard(c) {
+  const date = new Date(c.created_at).toLocaleString("es-MX", {dateStyle:"medium", timeStyle:"short"});
+
+  const midiBtn = c.midi_output_url
+    ? `<a href="${c.midi_output_url}" class="btn btn-glass btn-sm" download><i class="bi bi-file-music me-1"></i>MIDI</a>`
+    : `<button class="btn btn-glass btn-sm" disabled><i class="bi bi-file-music me-1"></i>MIDI</button>`;
+
+  const xmlBtn = c.xml_output_url
+    ? `<a href="${c.xml_output_url}" class="btn btn-glass btn-sm" download><i class="bi bi-file-earmark-code me-1"></i>XML</a>`
+    : `<button class="btn btn-glass btn-sm" disabled><i class="bi bi-file-earmark-code me-1"></i>XML</button>`;
+
+  const spinner = isInProgress(c.status)
+    ? `<span class="spinner-wood ms-2"></span>`
+    : "";
+
+  const detected = c.detected_instrument
+    ? `<span class="text-soft small">Detectado: <span class="text-amber">${c.detected_instrument}</span></span>`
+    : "";
+
+  const errorLine = c.error_message
+    ? `<p class="text-danger small mt-1 mb-0"><i class="bi bi-exclamation-circle me-1"></i>${c.error_message}</p>`
+    : "";
+
+  return `
+  <div class="col-12 col-md-6 col-xl-4" id="card-${c.id}">
+    <div class="creacion-card p-3 h-100 d-flex flex-column gap-2">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          ${statusBadge(c.status)} ${spinner}
+          <p class="text-white fw-semibold mb-0 mt-1">${c.original_filename || `Creación #${c.id}`}</p>
+        </div>
+        <button class="btn btn-sm btn-glass ms-2 flex-shrink-0 delete-btn" data-id="${c.id}">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 small text-soft">
+        <span><i class="bi bi-music-note me-1"></i>${c.genre}</span>
+        <span><i class="bi bi-emoji-smile me-1"></i>${c.mood}</span>
+        <span><i class="bi bi-guitar me-1"></i>${c.instrument}</span>
+      </div>
+
+      ${detected}
+      ${errorLine}
+
+      <p class="text-soft small mb-0 mt-auto"><i class="bi bi-clock me-1"></i>${date}</p>
+
+      <div class="d-flex gap-2 mt-1">
+        ${midiBtn}
+        ${xmlBtn}
+      </div>
+    </div>
+  </div>`;
+}
+
+function pollCard(id) {
+  if (pollingIntervals[id]) return;
+  pollingIntervals[id] = setInterval(async () => {
+    try {
+      const c = await API.pollJob(id);
+      const container = document.getElementById(`card-${id}`);
+      if (container) container.outerHTML = renderCard(c);
+      attachDeleteListeners();
+      if (!isInProgress(c.status)) {
+        clearInterval(pollingIntervals[id]);
+        delete pollingIntervals[id];
+      }
+    } catch { /* ignore */ }
+  }, 4000);
+}
+
+function attachDeleteListeners() {
+  document.querySelectorAll(".delete-btn").forEach(btn => {
+    btn.onclick = () => {
+      pendingDeleteId = parseInt(btn.dataset.id, 10);
+      deleteModal.show();
+    };
+  });
+}
 
 async function loadCreaciones() {
-  const res = await API.getCreaciones();
-  if (res.status === 401) { Auth.logout(); return; }
-  if (!res.ok) return;
+  Object.values(pollingIntervals).forEach(clearInterval);
+  pollingIntervals = {};
 
-  creaciones = await res.json();
+  document.getElementById("loadingState").classList.remove("d-none");
+  document.getElementById("emptyState").classList.add("d-none");
+  document.getElementById("creacionesGrid").classList.add("d-none");
 
-  const list    = document.getElementById('creacionesList');
-  const empty   = document.getElementById('emptyState');
-  const spinner = document.getElementById('loadingSpinner');
+  try {
+    const list = await API.listCreaciones();
+    document.getElementById("loadingState").classList.add("d-none");
 
-  spinner.classList.add('d-none');
-
-  if (creaciones.length === 0) {
-    empty.classList.remove('d-none');
-    return;
-  }
-
-  list.innerHTML = '';
-  list.classList.remove('d-none');
-
-  creaciones.forEach(c => renderCard(c, list));
-
-  // Polling: refrescar las que estén en proceso
-  const inProgress = creaciones.filter(c => IN_PROGRESS.has(c.status));
-  if (inProgress.length > 0) {
-    clearTimeout(pollTimer);
-    pollTimer = setTimeout(pollInProgress, 3000);
-  }
-}
-
-function renderCard(c, container) {
-  const tmpl  = document.getElementById('cardTemplate').content.cloneNode(true);
-  const card  = tmpl.querySelector('.col-md-6');
-  card.dataset.id = c.id;
-
-  tmpl.querySelector('.filename').textContent      = c.original_filename;
-  tmpl.querySelector('.genre-badge').textContent   = c.genre;
-  tmpl.querySelector('.mood-badge').textContent    = c.mood;
-  tmpl.querySelector('.instrument-badge').textContent = c.instrument;
-  tmpl.querySelector('.created-at').textContent    =
-    new Date(c.created_at).toLocaleString('es-MX');
-
-  const info = STATUS_LABELS[c.status] || { text: c.status, cls: '' };
-  const badge = tmpl.querySelector('.status-badge');
-  badge.textContent = info.text;
-  badge.classList.add('badge', info.cls);
-
-  if (c.status === 'COMPLETED') {
-    const links = tmpl.querySelector('.output-links');
-    links.classList.remove('d-none');
-    const midiLink = tmpl.querySelector('.midi-link');
-    const xmlLink  = tmpl.querySelector('.xml-link');
-    if (c.midi_output_url) midiLink.href = c.midi_output_url;
-    else midiLink.classList.add('d-none');
-    if (c.xml_output_url)  xmlLink.href  = c.xml_output_url;
-    else xmlLink.classList.add('d-none');
-    if (c.notes_generated != null) {
-      tmpl.querySelector('.notes-info').textContent =
-        `${c.notes_generated} notas · ${(c.duration_seconds || 0).toFixed(1)}s`;
+    if (list.length === 0) {
+      document.getElementById("emptyState").classList.remove("d-none");
+      return;
     }
-  }
 
-  if (c.status === 'FAILED') {
-    const eb = tmpl.querySelector('.error-block');
-    eb.classList.remove('d-none');
-    eb.querySelector('.error-msg').textContent = c.error_message || 'Error desconocido';
-  }
+    const grid = document.getElementById("creacionesGrid");
+    grid.innerHTML = list.map(renderCard).join("");
+    grid.classList.remove("d-none");
+    attachDeleteListeners();
 
-  tmpl.querySelector('.delete-btn').addEventListener('click', () => deleteCreacion(c.id));
-
-  container.appendChild(tmpl);
-}
-
-async function pollInProgress() {
-  const list = document.getElementById('creacionesList');
-  let stillRunning = false;
-
-  for (const c of creaciones) {
-    if (!IN_PROGRESS.has(c.status)) continue;
-    const res = await API.getJob(c.id);
-    if (!res.ok) continue;
-    const updated = await res.json();
-
-    // Actualizar la tarjeta en el DOM
-    const existing = list.querySelector(`[data-id="${c.id}"]`);
-    if (existing) existing.remove();
-
-    Object.assign(c, updated);
-    renderCard(updated, list);
-
-    if (IN_PROGRESS.has(updated.status)) stillRunning = true;
-  }
-
-  if (stillRunning) pollTimer = setTimeout(pollInProgress, 3000);
-}
-
-async function deleteCreacion(id) {
-  if (!confirm('¿Borrar esta creación? Esta acción es permanente.')) return;
-  const res = await API.deleteCreacion(id);
-  if (res.ok || res.status === 204) {
-    creaciones = creaciones.filter(c => c.id !== id);
-    const card = document.getElementById('creacionesList')
-                         .querySelector(`[data-id="${id}"]`);
-    if (card) card.remove();
-    if (creaciones.length === 0) {
-      document.getElementById('creacionesList').classList.add('d-none');
-      document.getElementById('emptyState').classList.remove('d-none');
-    }
+    list.filter(c => isInProgress(c.status)).forEach(c => pollCard(c.id));
+  } catch (err) {
+    document.getElementById("loadingState").innerHTML =
+      `<p class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${err.message}</p>`;
   }
 }
 

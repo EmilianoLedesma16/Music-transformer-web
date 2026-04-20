@@ -99,6 +99,10 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
             raise ValueError("Melodía demasiado corta para tokenizar")
 
         enc_tokens = enc_tokens[: config.max_seq_len]
+        unk_tokens = [t for t in enc_tokens if t not in TOKEN2ID]
+        if unk_tokens:
+            logger.warning("Tokens del encoder sin mapeo (%d): %s", len(unk_tokens), unk_tokens[:20])
+        logger.warning("Encoder tokens (%d): %s", len(enc_tokens), enc_tokens[:30])
         enc_ids    = torch.tensor(
             [TOKEN2ID.get(t, TOKEN2ID["<UNK>"]) for t in enc_tokens],
             dtype=torch.long,
@@ -125,6 +129,11 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
             top_p=top_p,
         )
         dec_tokens = [ID2TOKEN.get(i, "<UNK>") for i in gen_ids]
+
+        # Diagnóstico: muestra los primeros 60 tokens generados
+        logger.warning("Tokens generados (%d total): %s", len(dec_tokens), dec_tokens[:60])
+        pitch_count = sum(1 for t in dec_tokens if t.startswith("<PITCH_"))
+        logger.warning("Tokens de pitch en salida: %d", pitch_count)
 
         # ── 4. Tokens → MIDI de acompañamiento ───────────────────────────
         out_pm = tokens_to_midi(
