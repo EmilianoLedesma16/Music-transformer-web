@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg libsndfile1 && rm -rf /var/lib/apt/lists/*

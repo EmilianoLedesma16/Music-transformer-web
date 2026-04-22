@@ -403,3 +403,55 @@ bytebeat/
 
 **`FileNotFoundError: best_model.pt`**
 → El checkpoint no está en `music-transformer/checkpoints/best_model.pt`. Ver paso 2 de instalación.
+
+
+# Para omi 
+1. Prerrequisitos del sistema (una sola vez)
+
+Instalar los drivers de NVIDIA y el toolkit para Docker:
+
+
+# Verificar que la GPU es reconocida
+nvidia-smi
+Si ese comando funciona, los drivers están bien. Solo falta el nvidia-container-toolkit:
+
+
+# Ubuntu/Debian
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+2. Clonar y configurar el proyecto
+
+
+git clone <url-del-repo>
+cd music-transformer-web
+cp .env.example .env
+# editar .env con las credenciales de Supabase y JWT_SECRET_KEY
+Luego copiar manualmente el checkpoint y el código del modelo:
+
+
+music-transformer/checkpoints/best_model.pt
+music-transformer/src/  ← archivos del modelo ML
+3. Buildear los contenedores
+
+
+docker compose build --no-cache api
+docker compose build --no-cache ml_worker
+docker compose build --no-cache transcription_worker
+docker compose build --no-cache generation_worker   # este tarda más (~4 GB imagen PyTorch+CUDA)
+4. Levantar
+
+
+docker compose up -d
+5. Verificar que el generation_worker ve la GPU
+
+
+docker compose exec generation_worker python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+Debe imprimir True y el nombre de la GPU, por ejemplo NVIDIA GeForce RTX 3080.
+
+6. Abrir en el browser
+
+
+http://localhost:8000
+A partir de ahí el flujo es el mismo que en CPU pero la generación tarda 1-2 minutos en vez de 30-60.
