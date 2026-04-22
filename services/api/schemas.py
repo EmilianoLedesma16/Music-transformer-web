@@ -49,6 +49,7 @@ class CreacionResponse(BaseModel):
     notes_generated: Optional[int] = None
     duration_seconds: Optional[float] = None
     error_message: Optional[str] = None
+    progress_detail: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

@@ -59,3 +59,6 @@ class Creacion(Base):
 
     # Error
     error_message       = Column(Text, nullable=True)
+
+    # Progreso en tiempo real
+    progress_detail     = Column(Text, nullable=True)

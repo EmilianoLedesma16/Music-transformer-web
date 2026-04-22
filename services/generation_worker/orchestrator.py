@@ -1,21 +1,22 @@
 """
 Pipeline de generación musical (generation_worker).
 
-Recibe la ruta del MIDI transcrito por el transcription_worker y:
+Recibe el MIDI transcrito y:
   1. Parsea el MIDI con pretty_midi
   2. Tokeniza la melodía (encoder tokens)
-  3. Ejecuta inferencia con MusicTransformer
+  3. Ejecuta inferencia con MusicTransformer (event-based decoder)
   4. Convierte tokens → MIDI de acompañamiento
-  5. Convierte tokens → MusicXML (partitura)
+  5. Convierte tokens → MusicXML (partitura de dos pentagramas)
   6. Sube ambos archivos a Supabase Storage
-  7. Actualiza la BD con las URLs y status=COMPLETED
-
-music-transformer/src está montado en /app/mt_src y añadido a PYTHONPATH.
+  7. Actualiza la BD con URLs y status=COMPLETED
 """
 import logging
 import os
 import uuid
 from pathlib import Path
+
+import pretty_midi
+import torch
 
 from db import update_creacion
 from storage import upload_file
@@ -49,13 +50,14 @@ def _get_model(device):
         if not CHECKPOINT_PATH.exists():
             raise FileNotFoundError(
                 f"Checkpoint no encontrado en {CHECKPOINT_PATH}. "
-                "Coloca best_model.pt en el volumen model_checkpoints."
+                "Coloca best_model.pt en music-transformer/checkpoints/."
             )
         ckpt = torch.load(CHECKPOINT_PATH, map_location=device)
         model.load_state_dict(ckpt["model_state"])
         model.eval()
         _model_cache[key] = (model, config)
-        logger.info("MusicTransformer cargado desde %s", CHECKPOINT_PATH)
+        logger.info("MusicTransformer cargado desde %s (epoch %d, val_loss=%.4f)",
+                    CHECKPOINT_PATH, ckpt.get("epoch", 0), ckpt.get("val_loss", 0))
     return _model_cache[key]
 
 
@@ -66,10 +68,13 @@ _ENERGY_LEVEL = {"LOW": 0.2, "MED": 0.5, "HIGH": 0.8}
 def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         energy: str, instrument: str, temperature: float, top_p: float) -> None:
 
-    update_creacion(creacion_id, status="GENERATING")
+    update_creacion(creacion_id, status="GENERATING",
+                    progress_detail="Iniciando pipeline de generación…")
 
     if STUB_GENERATION:
-        update_creacion(creacion_id, status="COMPLETED", notes_generated=0, duration_seconds=0.0)
+        update_creacion(creacion_id, status="COMPLETED",
+                        notes_generated=0, duration_seconds=0.0,
+                        progress_detail="Stub activo — generación completada sin modelo")
         logger.info("STUB_GENERATION activo — creacion %d completada sin modelo", creacion_id)
         return
 
@@ -82,6 +87,7 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         from utils.tokens_to_musicxml import tokens_to_musicxml
 
         # ── 1. Parsear MIDI de entrada ────────────────────────────────────
+        update_creacion(creacion_id, progress_detail="Parseando MIDI de entrada…")
         pm = pretty_midi.PrettyMIDI(midi_path)
         melody_inst, _ = select_tracks(pm)
         if melody_inst is None:
@@ -93,10 +99,12 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         if not (30 < tempo_bpm < 300):
             tempo_bpm = 120.0
         key_token = detect_key(pm)
+        logger.info("Creacion %d — tonalidad: %s  tempo: %.0f BPM", creacion_id, key_token, tempo_bpm)
 
         # ── 2. Tokenizar melodía (encoder) ────────────────────────────────
+        update_creacion(creacion_id, progress_detail="Tokenizando melodía de entrada…")
         device        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model, config = _get_model(device)
+        logger.info("Creacion %d — dispositivo: %s", creacion_id, device)
 
         energy_level = _ENERGY_LEVEL.get(energy.upper(), 0.5)
         enc_tokens = notes_to_token_sequence(
@@ -107,11 +115,11 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         if enc_tokens is None:
             raise ValueError("Melodía demasiado corta para tokenizar")
 
+        # ── 3. Cargar modelo y preparar tensores ──────────────────────────
+        update_creacion(creacion_id, progress_detail="Cargando modelo MusicTransformer…")
+        model, config = _get_model(device)
+
         enc_tokens = enc_tokens[: config.max_seq_len]
-        unk_tokens = [t for t in enc_tokens if t not in TOKEN2ID]
-        if unk_tokens:
-            logger.warning("Tokens del encoder sin mapeo (%d): %s", len(unk_tokens), unk_tokens[:20])
-        logger.warning("Encoder tokens (%d): %s", len(enc_tokens), enc_tokens[:30])
         enc_ids    = torch.tensor(
             [TOKEN2ID.get(t, TOKEN2ID["<UNK>"]) for t in enc_tokens],
             dtype=torch.long,
@@ -124,32 +132,37 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
 
         prompt = [
             TOKEN2ID["<SOS>"],
-            TOKEN2ID[f"<GENRE_{genre}>"],
-            TOKEN2ID[f"<MOOD_{mood}>"],
-            TOKEN2ID[f"<ENERGY_{energy.upper()}>"],
-            TOKEN2ID[f"<INST_{instrument}>"],
+            TOKEN2ID.get(f"<GENRE_{genre}>",      TOKEN2ID["<UNK>"]),
+            TOKEN2ID.get(f"<MOOD_{mood}>",         TOKEN2ID["<UNK>"]),
+            TOKEN2ID.get(f"<ENERGY_{energy.upper()}>", TOKEN2ID["<UNK>"]),
+            TOKEN2ID.get(f"<INST_{instrument}>",   TOKEN2ID["<UNK>"]),
         ]
 
-        # ── 3. Inferencia Transformer ─────────────────────────────────────
-        gen_ids    = generate(
+        # ── 4. Inferencia Transformer ─────────────────────────────────────
+        update_creacion(creacion_id,
+                        progress_detail=f"Generando acompañamiento ({genre} / {mood} / {instrument})…")
+        gen_ids = generate(
             model, enc_ids, enc_mask, prompt, config, device,
             max_new_tokens=1024,
             temperature=temperature,
             top_p=top_p,
+            top_k=50,
+            repetition_penalty=1.3,
         )
-        dec_tokens = [ID2TOKEN.get(i, "<UNK>") for i in gen_ids]
 
-        # Diagnóstico: muestra los primeros 60 tokens generados
-        logger.warning("Tokens generados (%d total): %s", len(dec_tokens), dec_tokens[:60])
-        pitch_count = sum(1 for t in dec_tokens if t.startswith("<PITCH_"))
-        logger.warning("Tokens de pitch en salida: %d", pitch_count)
+        note_on_count = sum(1 for tid in gen_ids
+                            if ID2TOKEN.get(tid, "").startswith("<NOTE_ON_"))
+        logger.info("Creacion %d — %d tokens generados, %d NOTE_ON",
+                    creacion_id, len(gen_ids), note_on_count)
 
-        # ── 4. Tokens → MIDI de acompañamiento ───────────────────────────
+        # ── 5. Tokens → MIDI de acompañamiento ───────────────────────────
+        update_creacion(creacion_id, progress_detail="Convirtiendo a MIDI y MusicXML…")
         out_pm = tokens_to_midi(
             gen_ids,
             tempo_bpm=tempo_bpm,
             instrument_program=INST_PROGRAMS.get(instrument, 33),
         )
+
         slug     = str(uuid.uuid4())[:8]
         out_midi = MIDI_OUT_DIR / f"gen_{creacion_id}_{slug}.mid"
         out_xml  = XML_OUT_DIR  / f"gen_{creacion_id}_{slug}.xml"
@@ -157,18 +170,23 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         has_notes = bool(out_pm.instruments and out_pm.instruments[0].notes)
         if has_notes:
             out_pm.write(str(out_midi))
+        else:
+            logger.warning("Creacion %d — MIDI sin notas (NOTE_ON=%d)", creacion_id, note_on_count)
 
-        # ── 5. Tokens → MusicXML ─────────────────────────────────────────
+        # ── 6. Tokens → MusicXML ─────────────────────────────────────────
         tokens_to_musicxml(
             enc_tokens=enc_tokens,
-            dec_tokens=dec_tokens,
+            dec_token_ids=gen_ids,
             output_path=str(out_xml),
+            tempo_bpm=tempo_bpm,
+            accomp_name=f"{instrument.capitalize()} ({genre})",
         )
 
         notes_count = len(out_pm.instruments[0].notes) if has_notes else 0
         duration    = out_pm.get_end_time()            if has_notes else 0.0
 
-        # ── 6. Subir a Supabase ───────────────────────────────────────────
+        # ── 7. Subir a Supabase ───────────────────────────────────────────
+        update_creacion(creacion_id, progress_detail="Subiendo archivos a Supabase…")
         midi_url = None
         xml_url  = None
 
@@ -184,7 +202,7 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
             "application/xml",
         )
 
-        # ── 7. Actualizar BD ──────────────────────────────────────────────
+        # ── 8. Actualizar BD ──────────────────────────────────────────────
         update_creacion(
             creacion_id,
             status           = "COMPLETED",
@@ -192,11 +210,13 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
             xml_output_url   = xml_url,
             notes_generated  = notes_count,
             duration_seconds = duration,
+            progress_detail  = f"Completado — {notes_count} notas, {duration:.1f}s",
         )
         logger.info("Creacion %d completada. Notas: %d, Duración: %.1fs",
                     creacion_id, notes_count, duration)
 
     except Exception as exc:
         logger.exception("Error en generation_worker para creacion %d", creacion_id)
-        update_creacion(creacion_id, status="FAILED", error_message=str(exc))
+        update_creacion(creacion_id, status="FAILED",
+                        error_message=str(exc), progress_detail=None)
         raise

@@ -66,7 +66,7 @@ services:
     env_file: .env
     environment:
       PYTHONPATH: "/app/mt_src:/app"
-      STUB_GENERATION: "true"
+      STUB_GENERATION: "false"
     volumes:
       - shared_data:/app/data
       - ./music-transformer/checkpoints:/app/checkpoints

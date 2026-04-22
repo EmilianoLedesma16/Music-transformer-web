@@ -221,7 +221,7 @@ const STEP_IDS   = {
   COMPLETED:    "step-completed",
 };
 
-function updateSteps(status) {
+function updateSteps(status, progressDetail) {
   const idx = STEP_ORDER.indexOf(status);
   Object.entries(STEP_IDS).forEach(([s, id]) => {
     const el   = document.getElementById(id);
@@ -230,17 +230,24 @@ function updateSteps(status) {
     if (sIdx < idx)        el.classList.add("done");
     else if (sIdx === idx) el.classList.add("active");
   });
-  document.getElementById("statusMsg").textContent =
-    status === "FAILED"    ? "" :
-    status === "COMPLETED" ? "¡Listo! Descarga tus archivos." :
-    "Este proceso puede tardar unos minutos…";
+
+  const msgEl = document.getElementById("statusMsg");
+  if (status === "FAILED") {
+    msgEl.textContent = "";
+  } else if (status === "COMPLETED") {
+    msgEl.textContent = "¡Listo! Descarga tus archivos.";
+  } else if (status === "GENERATING" && progressDetail) {
+    msgEl.innerHTML = `<span class="spinner-wood me-2"></span>${progressDetail}`;
+  } else {
+    msgEl.textContent = "Este proceso puede tardar unos minutos…";
+  }
 }
 
 function startPolling(jobId) {
   const interval = setInterval(async () => {
     try {
       const job = await API.pollJob(jobId);
-      updateSteps(job.status);
+      updateSteps(job.status, job.progress_detail);
       if (job.status === "COMPLETED") {
         clearInterval(interval);
         showResults(job);

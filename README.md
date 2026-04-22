@@ -1,12 +1,13 @@
 # ByteBeat — Generador de Acompañamiento Musical con IA
 
-Plataforma web que permite subir una melodía en audio, describirla con texto libre y recibir un acompañamiento musical generado por un Transformer encoder-decoder. Exporta en formato MIDI y MusicXML.
+Plataforma web que permite subir una melodía en audio, describirla con texto libre y recibir un acompañamiento musical generado por un Transformer encoder-decoder. Exporta en formato MIDI y MusicXML (partitura de dos pentagramas).
 
 ---
 
 ## Estado actual del proyecto
 
 ### ✅ Funciona completamente
+
 - Registro e inicio de sesión con email/contraseña
 - Autenticación JWT (7 días)
 - Dashboard con lista de creaciones y polling de estado en tiempo real
@@ -14,20 +15,21 @@ Plataforma web que permite subir una melodía en audio, describirla con texto li
 - Prompt de personalización en texto libre (NLP con detección de negación y confianza)
 - Clasificación de instrumento con CNN14 (PANNs — descarga ~325 MB en el primer job)
 - Transcripción audio → MIDI con Basic Pitch
-- Almacenamiento de audios en Supabase Storage
+- **Generación real de acompañamiento** con MusicTransformer v2 (checkpoint `best_model.pt`)
+- Exportación a **MIDI** y **MusicXML** (partitura de dos pentagramas: melodía + acompañamiento)
+- Feedback de progreso en tiempo real durante la generación (spinner con mensajes por etapa)
+- Almacenamiento de archivos en Supabase Storage
 - Panel de administración (`/admin.html`) con manejo de roles (admin/usuario)
 - API REST completa con Swagger en `/docs`
 
-### ⚠️ Hardcodeado (stub temporal)
-- **Generación musical**: el pipeline completo corre (CNN14 + Basic Pitch) pero la inferencia del Transformer está bypasada con `STUB_GENERATION=true`. El job termina como COMPLETED sin generar MIDI/XML de salida. Esto es intencional hasta que el checkpoint del modelo v2 esté disponible.
-
 ### ❌ Pendiente antes de producción
+
+- [ ] **GPU en el servidor** — la generación en CPU tarda 30-60 min; con GPU (T4 o mejor) baja a < 2 min
+- [ ] Nginx + HTTPS para producción (reverse proxy frente al API)
 - [ ] CORS middleware en el API (necesario si frontend y API están en dominios distintos)
 - [ ] Migraciones de DB con Alembic (actualmente `create_all()` no migra tablas existentes)
-- [ ] Checkpoint v2 del modelo (`best_model.pt`) — lo genera el compañero ML
-- [ ] Despliegue en Railway (o similar) con DB y Redis administrados
-- [ ] Deshabilitar `STUB_GENERATION` una vez que el modelo esté disponible
 - [ ] Google OAuth en producción (requiere credenciales de Google Cloud Console)
+- [ ] Visor de partitura en el browser (OSMD o Verovio para renderizar MusicXML inline)
 
 ---
 
@@ -41,9 +43,10 @@ Browser
         └── Despacha tareas a Celery
 
 Celery Workers (3 en cadena):
-  ml_worker          → Clasifica instrumento con CNN14
+  ml_worker            → Clasifica instrumento con CNN14 (PANNs)
   transcription_worker → Convierte audio a MIDI con Basic Pitch
-  generation_worker  → Genera acompañamiento con MusicTransformer (stub activo)
+  generation_worker    → Genera acompañamiento con MusicTransformer v2
+                         Exporta MIDI + MusicXML y sube a Supabase
 
 Infraestructura:
   PostgreSQL  → Base de datos (usuarios, creaciones, estado)
@@ -52,14 +55,15 @@ Infraestructura:
 ```
 
 ### Servicios Docker
+
 | Servicio | Puerto | Descripción |
 |---|---|---|
 | `api` | 8000 | FastAPI + frontend estático |
 | `db` | 5432 | PostgreSQL 15 |
 | `redis` | 6379 | Redis 7 |
-| `ml_worker` | — | Celery worker (CNN14) |
-| `transcription_worker` | — | Celery worker (Basic Pitch) |
-| `generation_worker` | — | Celery worker (MusicTransformer, stub) |
+| `ml_worker` | — | Celery worker — clasificación CNN14 |
+| `transcription_worker` | — | Celery worker — audio → MIDI (Basic Pitch) |
+| `generation_worker` | — | Celery worker — MusicTransformer v2 (requiere `best_model.pt`) |
 
 ---
 
@@ -68,6 +72,7 @@ Infraestructura:
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac/Linux)
 - Git
 - Cuenta en [Supabase](https://supabase.com) (para storage de archivos)
+- Checkpoint del modelo: `music-transformer/checkpoints/best_model.pt` (no incluido en el repo — ver abajo)
 
 No se necesita Python local para correr el proyecto — todo corre dentro de Docker.
 
@@ -82,10 +87,28 @@ git clone https://github.com/TU_USUARIO/bytebeat.git
 cd bytebeat
 ```
 
-### 2. Configurar variables de entorno
+### 2. Configurar el modelo
+
+El directorio `music-transformer/` no está en git (`.gitignore`) porque contiene el checkpoint del modelo (~400 MB). Debe copiarse manualmente:
+
+```
+music-transformer/
+├── checkpoints/
+│   └── best_model.pt          ← copiar aquí el checkpoint v2
+└── src/                       ← código fuente del modelo (configurar con el equipo ML)
+    ├── model/
+    │   ├── config.py
+    │   ├── transformer.py
+    │   └── inference.py
+    ├── data/
+    │   └── midi_tokenizer.py
+    └── utils/
+        └── tokens_to_musicxml.py
+```
+
+### 3. Configurar variables de entorno
 
 ```bash
-# Copiar la plantilla
 cp .env.example .env
 ```
 
@@ -95,13 +118,13 @@ Lo mínimo para levantar localmente:
 - `JWT_SECRET_KEY` → generar con `openssl rand -hex 32`
 - `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BUCKET` → de tu proyecto Supabase
 
-### 3. Crear el bucket en Supabase
+### 4. Crear el bucket en Supabase
 
 1. Ir a [app.supabase.com](https://app.supabase.com) → tu proyecto → **Storage**
 2. Crear bucket llamado `bytebeat` → marcarlo como **Public**
 3. Copiar la URL del proyecto y el `service_role` key al `.env`
 
-### 4. Buildear las imágenes Docker
+### 5. Buildear las imágenes Docker
 
 > **IMPORTANTE:** buildear una por una para no saturar la RAM.
 
@@ -112,15 +135,15 @@ docker compose build --no-cache transcription_worker
 docker compose build --no-cache generation_worker
 ```
 
-Cada build tarda entre 2 y 10 minutos dependiendo de la conexión. El `ml_worker` es el más pesado (descarga librerías de ML).
+Cada build tarda entre 2 y 10 minutos dependiendo de la conexión. El `generation_worker` es el más pesado (instala PyTorch + dependencias ML).
 
-### 5. Levantar el proyecto
+### 6. Levantar el proyecto
 
 ```bash
 docker compose up -d
 ```
 
-### 6. Verificar que todo esté corriendo
+### 7. Verificar que todo esté corriendo
 
 ```bash
 docker compose ps
@@ -129,17 +152,18 @@ docker compose ps
 Deben aparecer 6 contenedores en estado `running` o `healthy`:
 `db`, `redis`, `api`, `ml_worker`, `transcription_worker`, `generation_worker`
 
-### 7. Abrir en el browser
+### 8. Abrir en el browser
 
 ```
 http://localhost:8000
 ```
 
-### 8. Crear el primer usuario administrador
+### Esto lo sigue en prueba creo que funciona parcialmente pero hay un bug en el localStorage
+### 9. Crear el primer usuario administrador
 
 1. Registrarse en `/register.html`
 2. Ir a `http://localhost:8000/docs` (Swagger UI)
-3. Autenticarse con el token JWT que se recibió al registrarse
+3. Autenticarse con el token JWT recibido al registrarse
 4. Ejecutar `PATCH /admin/users/1/role` con body `{"role": "admin"}`
 5. Recargar el dashboard → aparece el botón **Admin**
 
@@ -162,7 +186,51 @@ http://localhost:8000
 | `SUPABASE_KEY` | Service role key de Supabase | *(desde Settings → API)* |
 | `SUPABASE_BUCKET` | Nombre del bucket de storage | `bytebeat` |
 | `FRONTEND_URL` | URL base del frontend | `http://localhost:8000` |
-| `STUB_GENERATION` | Activa/desactiva el stub del modelo | `true` (hasta tener el checkpoint) |
+| `STUB_GENERATION` | Bypasea el modelo (solo para pruebas sin checkpoint) | `false` |
+
+---
+
+## Tiempos de procesamiento esperados
+
+| Etapa | CPU (desarrollo) | GPU recomendado (producción) |
+|---|---|---|
+| Clasificación CNN14 (1.ª vez) | 10-15 min (descarga 325 MB) | igual |
+| Clasificación CNN14 (siguientes) | 5-15 seg | 5-15 seg |
+| Transcripción Basic Pitch | 30-60 seg | 30-60 seg |
+| Generación MusicTransformer (1024 tokens) | **30-60 min** | **1-2 min** |
+
+La generación es el cuello de botella. Para producción se recomienda una instancia con GPU (NVIDIA T4 o superior). El `generation_worker` es el único contenedor que se beneficia de GPU; el resto puede correr en CPU.
+
+---
+
+## Deploy en producción (con GPU)
+
+La arquitectura de Celery permite separar el `generation_worker` en una máquina distinta con GPU. El resto de servicios (API, workers ligeros, Redis, PostgreSQL) pueden correr en un VPS CPU estándar (~$5-10/mes).
+
+### Opción simple: todo en la máquina GPU
+
+```bash
+# En el servidor con GPU:
+git clone <repo> && cd bytebeat
+cp .env.example .env  # editar con credenciales de producción
+docker compose up -d
+
+# Exponer públicamente (sin dominio propio):
+ngrok http 8000
+```
+
+### Para HTTPS con dominio propio
+
+Agregar Nginx al `docker-compose.yml` como reverse proxy y usar Cloudflare como proxy DNS (HTTPS automático sin Certbot).
+
+### Para el `generation_worker` en GPU cloud (RunPod, Lambda Labs)
+
+El worker solo necesita apuntar al mismo Redis:
+
+```env
+CELERY_BROKER_URL=redis://<ip-del-servidor-principal>:6379/0
+CELERY_RESULT_BACKEND=redis://<ip-del-servidor-principal>:6379/0
+```
 
 ---
 
@@ -175,19 +243,24 @@ docker compose logs ml_worker --tail=50
 docker compose logs generation_worker --tail=50
 
 # Reiniciar un servicio sin rebuildar
-docker compose restart api
+docker compose restart generation_worker
 
 # Parar todo (conserva la DB)
 docker compose down
 
-# Parar todo y BORRAR la DB (reset completo)
+# Parar todo y BORRAR la DB (reset completo — necesario al cambiar el schema)
 docker compose down -v
 
-# Entrar al contenedor de la API
+# Entrar al contenedor
 docker compose exec api bash
+docker compose exec generation_worker bash
 
 # Ver la DB con psql
 docker compose exec db psql -U mtuser -d music_transformer
+
+# Recuperar archivos generados (cuando Supabase no está configurado)
+docker compose cp generation_worker:/app/data/processed/output_midis/ ./output_midis/
+docker compose cp generation_worker:/app/data/output/musicxml/ ./output_xml/
 ```
 
 ---
@@ -228,19 +301,17 @@ Todos los endpoints del API (excepto `/auth/login` y `/auth/register`) requieren
 
 ### API client (`api.js`)
 
-Todos los requests al backend pasan por el objeto `API`:
-
 ```javascript
 API.login(email, password)
 API.register(name, email, password)
-API.getMe()                          // GET /me — perfil del usuario autenticado
+API.getMe()                          // GET /me
 API.parsePrompt(text)                // POST /parse-prompt — NLP del prompt
 API.submitProcess(formData)          // POST /process — subir audio e iniciar job
 API.pollJob(jobId)                   // GET /process/{id} — estado del job
-API.listCreaciones()                 // GET /creaciones — lista del usuario
+API.listCreaciones()                 // GET /creaciones
 API.deleteCreacion(id)               // DELETE /creaciones/{id}
-API.adminListUsers()                 // GET /admin/users — solo admins
-API.adminSetRole(userId, role)       // PATCH /admin/users/{id}/role — solo admins
+API.adminListUsers()                 // GET /admin/users
+API.adminSetRole(userId, role)       // PATCH /admin/users/{id}/role
 ```
 
 ### Workflow para editar el frontend
@@ -283,53 +354,34 @@ La documentación interactiva completa está en `http://localhost:8000/docs` (Sw
 ```
 bytebeat/
 ├── docker-compose.yml
-├── .env                    # NO se sube a git (en .gitignore)
-├── .env.example            # Plantilla con variables vacías
-├── frontend/               # Frontend estático (bind mount en Docker)
+├── .env                         # NO se sube a git (en .gitignore)
+├── .env.example                 # Plantilla con variables vacías
+├── frontend/                    # Frontend estático (bind mount en Docker)
+├── music-transformer/           # NO está en git (.gitignore)
+│   ├── checkpoints/
+│   │   └── best_model.pt        # Checkpoint v2 del modelo (~400 MB)
+│   └── src/                     # Código fuente del modelo ML
 └── services/
-    ├── api/                # FastAPI — API REST + auth + sirve el frontend
+    ├── api/                     # FastAPI — API REST + auth + sirve el frontend
     │   ├── main.py
-    │   ├── models.py       # SQLAlchemy: User, Creacion
-    │   ├── schemas.py      # Pydantic: respuestas de la API
-    │   ├── prompt_parser.py # NLP keyword-based con detección de negación
-    │   ├── auth/           # JWT + Google OAuth
-    │   ├── storage/        # Cliente Supabase
+    │   ├── models.py            # SQLAlchemy: User, Creacion
+    │   ├── schemas.py           # Pydantic: respuestas de la API
+    │   ├── prompt_parser.py     # NLP keyword-based con detección de negación
+    │   ├── auth/                # JWT + Google OAuth
+    │   ├── storage/             # Cliente Supabase
     │   └── Dockerfile
-    ├── ml_worker/          # Celery worker — clasificación CNN14
-    ├── transcription_worker/ # Celery worker — audio→MIDI (Basic Pitch)
-    └── generation_worker/  # Celery worker — MusicTransformer (stub activo)
-        └── orchestrator.py # Pipeline de generación (STUB_GENERATION controla el modo)
+    ├── ml_worker/               # Celery worker — clasificación CNN14
+    ├── transcription_worker/    # Celery worker — audio → MIDI (Basic Pitch)
+    └── generation_worker/       # Celery worker — MusicTransformer v2
+        └── orchestrator.py      # Pipeline completo: tokenizar → generar → exportar → subir
 ```
-
----
-
-## Integración del modelo de generación (pendiente)
-
-Cuando el checkpoint v2 esté disponible (`best_model.pt`), los pasos son:
-
-1. Copiar los archivos del modelo al directorio `music-transformer/src/` (se monta como volumen)
-2. Copiar el checkpoint a `music-transformer/checkpoints/best_model.pt`
-3. Restaurar dependencias ML en `services/generation_worker/requirements.txt`:
-   ```
-   torch==2.3.0
-   torchaudio==2.3.0
-   pretty_midi==0.2.10
-   music21==9.3.0
-   numpy==1.26.4
-   tqdm
-   ```
-4. En `docker-compose.yml`, cambiar `STUB_GENERATION: "true"` → `STUB_GENERATION: "false"`
-5. Rebuildar solo el generation_worker: `docker compose build --no-cache generation_worker`
-6. `docker compose up -d`
-
-El resto de la plataforma no requiere cambios.
 
 ---
 
 ## Solución de problemas frecuentes
 
 **El build se interrumpe o reinicia la PC**
-→ Buildear los servicios uno por uno (ver paso 4 de instalación). No usar `docker compose build` sin especificar servicio.
+→ Buildear los servicios uno por uno (ver paso 5 de instalación). No usar `docker compose build` sin especificar servicio.
 
 **"parent snapshot does not exist" al buildear**
 → Caché de Docker corrompido. Ejecutar `docker builder prune -f` y reintentar.
@@ -337,8 +389,17 @@ El resto de la plataforma no requiere cambios.
 **"Failed to fetch" en el browser**
 → Hacer hard refresh: `Ctrl+Shift+R`. Los archivos JS se cachean en el browser.
 
-**El primer job tarda mucho (5-10 min)**
+**El primer job tarda 10-15 min en VALIDATING**
 → El `ml_worker` descarga el checkpoint CNN14 (~325 MB) la primera vez. Los jobs siguientes son rápidos.
 
-**La columna "role" o "energy" no existe en la DB**
-→ La DB fue creada con una versión anterior del schema. Ejecutar `docker compose down -v` y volver a levantar (esto borra todos los datos).
+**La generación tarda 30-60 minutos**
+→ Normal en CPU. Para producción se requiere GPU (ver sección de deploy).
+
+**Columna `progress_detail` o `energy` no existe en la DB**
+→ La DB fue creada con una versión anterior del schema. Ejecutar `docker compose down -v` y volver a levantar. Esto borra todos los datos locales.
+
+**Los archivos MIDI/XML se generaron pero no hay links de descarga**
+→ Las credenciales de Supabase en `.env` son incorrectas. Los archivos quedan en disco dentro del contenedor. Recuperarlos con `docker compose cp` (ver sección de comandos útiles).
+
+**`FileNotFoundError: best_model.pt`**
+→ El checkpoint no está en `music-transformer/checkpoints/best_model.pt`. Ver paso 2 de instalación.
