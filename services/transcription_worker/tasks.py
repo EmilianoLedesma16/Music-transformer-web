@@ -9,7 +9,7 @@ celery_app = Celery("transcription_tasks", broker=BROKER, backend=BACKEND)
 
 @celery_app.task(name="transcription_tasks.transcribe")
 def transcribe(creacion_id: int, audio_path: str, genre: str, mood: str,
-               instrument: str, temperature: float, top_p: float):
+               energy: str, instrument: str, temperature: float, top_p: float):
     from db import update_creacion
     from transcriber import audio_to_midi
 
@@ -19,10 +19,9 @@ def transcribe(creacion_id: int, audio_path: str, genre: str, mood: str,
         midi_path = audio_to_midi(audio_path, creacion_id)
         update_creacion(creacion_id, midi_path=midi_path)
 
-        # Encadenar al generation_worker
         celery_app.send_task(
             "generation_tasks.generate",
-            args=[creacion_id, midi_path, genre, mood, instrument, temperature, top_p],
+            args=[creacion_id, midi_path, genre, mood, energy, instrument, temperature, top_p],
             queue="generation_queue",
         )
     except Exception as exc:

@@ -9,7 +9,7 @@ celery_app = Celery("ml_tasks", broker=BROKER, backend=BACKEND)
 
 @celery_app.task(name="ml_tasks.validate_instrument")
 def validate_instrument(creacion_id: int, audio_path: str, genre: str, mood: str,
-                        instrument: str, temperature: float, top_p: float):
+                        energy: str, instrument: str, temperature: float, top_p: float):
     from db import update_creacion
     from classifier import classify_instrument
 
@@ -29,9 +29,8 @@ def validate_instrument(creacion_id: int, audio_path: str, genre: str, mood: str
         )
         return
 
-    # Encadenar al transcription_worker
     celery_app.send_task(
         "transcription_tasks.transcribe",
-        args=[creacion_id, audio_path, genre, mood, instrument, temperature, top_p],
+        args=[creacion_id, audio_path, genre, mood, energy, instrument, temperature, top_p],
         queue="transcription_queue",
     )

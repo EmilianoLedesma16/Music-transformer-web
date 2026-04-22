@@ -13,14 +13,14 @@ Recibe la ruta del MIDI transcrito por el transcription_worker y:
 music-transformer/src está montado en /app/mt_src y añadido a PYTHONPATH.
 """
 import logging
+import os
 import uuid
 from pathlib import Path
 
-import torch
-import pretty_midi
-
 from db import update_creacion
 from storage import upload_file
+
+STUB_GENERATION = os.environ.get("STUB_GENERATION", "").lower() in ("1", "true", "yes")
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +60,18 @@ def _get_model(device):
 
 
 # ── Pipeline principal ────────────────────────────────────────────────────────
+_ENERGY_LEVEL = {"LOW": 0.2, "MED": 0.5, "HIGH": 0.8}
+
+
 def run(creacion_id: int, midi_path: str, genre: str, mood: str,
-        instrument: str, temperature: float, top_p: float) -> None:
+        energy: str, instrument: str, temperature: float, top_p: float) -> None:
 
     update_creacion(creacion_id, status="GENERATING")
+
+    if STUB_GENERATION:
+        update_creacion(creacion_id, status="COMPLETED", notes_generated=0, duration_seconds=0.0)
+        logger.info("STUB_GENERATION activo — creacion %d completada sin modelo", creacion_id)
+        return
 
     try:
         from model.inference import generate, tokens_to_midi
@@ -90,9 +98,10 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         device        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model, config = _get_model(device)
 
+        energy_level = _ENERGY_LEVEL.get(energy.upper(), 0.5)
         enc_tokens = notes_to_token_sequence(
             melody_inst, pm, tempo_bpm, key_token,
-            genre, mood, 0.5,
+            genre, mood, energy_level,
             inst_to_token(melody_inst), is_encoder=True,
         )
         if enc_tokens is None:
@@ -117,7 +126,7 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
             TOKEN2ID["<SOS>"],
             TOKEN2ID[f"<GENRE_{genre}>"],
             TOKEN2ID[f"<MOOD_{mood}>"],
-            TOKEN2ID["<ENERGY_MED>"],
+            TOKEN2ID[f"<ENERGY_{energy.upper()}>"],
             TOKEN2ID[f"<INST_{instrument}>"],
         ]
 

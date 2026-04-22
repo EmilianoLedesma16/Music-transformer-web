@@ -8,32 +8,100 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"/>
   <link rel="stylesheet" href="/static/css/app.css"/>
   <style>
+    /* ── Wizard steps indicator ── */
+    .wizard-steps {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 2rem;
+    }
+    .wz-step {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: .82rem;
+      color: rgba(255,255,255,.35);
+      flex-shrink: 0;
+    }
+    .wz-step.active { color: var(--wood-amber); }
+    .wz-step.done   { color: #76e2b3; }
+    .wz-dot {
+      width: 1.6rem; height: 1.6rem;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .72rem; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .wz-step.done .wz-dot { background: #76e2b3; border-color: #76e2b3; color: #111; }
+    .wz-step.active .wz-dot { background: var(--wood-amber); border-color: var(--wood-amber); color: #111; }
+    .wz-line {
+      flex: 1;
+      height: 1px;
+      background: rgba(255,255,255,.12);
+      margin: 0 .6rem;
+    }
+
+    /* ── Pill selectors (energy / instrument) ── */
+    .pill-group { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .pill-opt {
+      padding: .35rem .9rem;
+      border-radius: 2rem;
+      border: 1.5px solid rgba(255,255,255,.15);
+      color: rgba(255,255,255,.55);
+      cursor: pointer;
+      font-size: .83rem;
+      transition: all .2s;
+      user-select: none;
+    }
+    .pill-opt:hover { border-color: rgba(246,178,107,.45); color: rgba(255,255,255,.85); }
+    .pill-opt.selected {
+      border-color: var(--wood-amber);
+      background: rgba(246,178,107,.15);
+      color: var(--wood-amber);
+      font-weight: 600;
+    }
+
+    /* ── Confidence badge ── */
+    .conf-badge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .3rem .75rem; border-radius: 2rem;
+      font-size: .78rem; font-weight: 600;
+    }
+    .conf-high { background: rgba(118,226,179,.12); color: #76e2b3; border: 1px solid rgba(118,226,179,.3); }
+    .conf-med  { background: rgba(246,178,107,.12); color: var(--wood-amber); border: 1px solid rgba(246,178,107,.3); }
+    .conf-low  { background: rgba(255,90,90,.1);    color: #ff7070; border: 1px solid rgba(255,90,90,.25); }
+
+    /* ── Detected tag next to label ── */
+    .detect-tag {
+      font-size: .68rem; font-weight: 600; text-transform: uppercase;
+      padding: .1rem .45rem; border-radius: .3rem; margin-left: .4rem;
+      vertical-align: middle;
+    }
+    .detect-tag.yes { background: rgba(118,226,179,.18); color: #76e2b3; }
+    .detect-tag.no  { background: rgba(255,255,255,.07); color: rgba(255,255,255,.35); }
+
+    /* ── Progress steps ── */
     .progress-step {
       display: flex; align-items: center; gap: .5rem;
-      padding: .6rem .85rem;
-      border-radius: .6rem;
-      font-size: .85rem;
-      color: rgba(255,255,255,.45);
-      transition: color .3s;
+      padding: .6rem .85rem; border-radius: .6rem;
+      font-size: .85rem; color: rgba(255,255,255,.45); transition: color .3s;
     }
     .progress-step.active { color: var(--wood-amber); }
     .progress-step.done   { color: #76e2b3; }
     .step-dot {
-      width: .6rem; height: .6rem;
-      border-radius: 50%;
-      background: currentColor;
-      flex-shrink: 0;
+      width: .6rem; height: .6rem; border-radius: 50%;
+      background: currentColor; flex-shrink: 0;
     }
     .spinner-wood {
       width: 1.1rem; height: 1.1rem;
       border: 2px solid rgba(246,178,107,.3);
       border-top-color: var(--wood-amber);
-      border-radius: 50%;
-      animation: spin .7s linear infinite;
-      display: inline-block;
+      border-radius: 50%; animation: spin .7s linear infinite; display: inline-block;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #statusPanel { display: none; }
+
+    #panel-step2, #statusPanel { display: none; }
   </style>
 </head>
 <body>
@@ -57,83 +125,164 @@
 
   <main class="container py-5" style="max-width:760px;">
     <h2 class="text-white mb-1">Nueva creación</h2>
-    <p class="text-soft mb-4">Sube tu audio y configura el acompañamiento que ByteBeat generará.</p>
+    <p class="text-soft mb-4">Sube tu audio y describe el acompañamiento que quieres generar.</p>
 
-    <!-- Upload form -->
-    <div id="formPanel">
-      <div id="alertBox" class="d-none mb-3"></div>
-
-      <form id="createForm" novalidate>
-
-        <!-- Drop zone -->
-        <div class="upload-zone text-center p-5 mb-4" id="dropZone">
-          <i class="bi bi-cloud-arrow-up display-4 text-amber mb-2 d-block"></i>
-          <p class="text-white mb-1">Arrastra tu archivo de audio aquí</p>
-          <p class="text-soft small mb-3">WAV, MP3, OGG, FLAC o M4A · máx. 50 MB</p>
-          <button type="button" class="btn btn-glass btn-sm px-3" id="browseBtn">
-            <i class="bi bi-folder2-open me-1"></i>Explorar
-          </button>
-          <input type="file" id="audioInput" accept=".wav,.mp3,.ogg,.flac,.m4a" class="d-none" required/>
-          <p id="fileName" class="text-amber small mt-2 mb-0 d-none"></p>
-        </div>
-
-        <div class="row g-3 mb-3">
-          <div class="col-sm-4">
-            <label class="form-label text-white-50">Género</label>
-            <select class="form-select" id="genre">
-              <option value="ROCK">Rock</option>
-              <option value="POP" selected>Pop</option>
-              <option value="FUNK">Funk</option>
-              <option value="JAZZ">Jazz</option>
-              <option value="LATIN">Latín</option>
-              <option value="CLASSICAL">Clásica</option>
-              <option value="ELECTRONIC">Electrónica</option>
-            </select>
-          </div>
-          <div class="col-sm-4">
-            <label class="form-label text-white-50">Mood</label>
-            <select class="form-select" id="mood">
-              <option value="HAPPY" selected>Alegre</option>
-              <option value="SAD">Triste</option>
-              <option value="DARK">Oscuro</option>
-              <option value="RELAXED">Relajado</option>
-              <option value="TENSE">Tenso</option>
-            </select>
-          </div>
-          <div class="col-sm-4">
-            <label class="form-label text-white-50">Instrumento esperado</label>
-            <select class="form-select" id="instrument">
-              <option value="GUITAR" selected>Guitarra</option>
-              <option value="BASS">Bajo</option>
-              <option value="PIANO">Piano</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="row g-3 mb-4">
-          <div class="col-sm-6">
-            <label class="form-label text-white-50 d-flex justify-content-between">
-              Temperatura <span id="tempVal" class="text-amber">0.9</span>
-            </label>
-            <input type="range" class="form-range" id="temperature" min="0.1" max="1.5" step="0.05" value="0.9"/>
-            <small class="text-soft">Controla la creatividad de la generación</small>
-          </div>
-          <div class="col-sm-6">
-            <label class="form-label text-white-50 d-flex justify-content-between">
-              Top-p <span id="topPVal" class="text-amber">0.9</span>
-            </label>
-            <input type="range" class="form-range" id="topP" min="0.1" max="1.0" step="0.05" value="0.9"/>
-            <small class="text-soft">Controla la diversidad de muestreo</small>
-          </div>
-        </div>
-
-        <button class="btn btn-wood w-100 py-2 fs-5" type="submit" id="submitBtn">
-          <i class="bi bi-magic me-2"></i>Generar acompañamiento
-        </button>
-      </form>
+    <!-- Wizard indicator -->
+    <div class="wizard-steps mb-4" id="wizardSteps">
+      <div class="wz-step active" id="wz1">
+        <div class="wz-dot">1</div>
+        <span>Tu audio</span>
+      </div>
+      <div class="wz-line"></div>
+      <div class="wz-step" id="wz2">
+        <div class="wz-dot">2</div>
+        <span>Personalización</span>
+      </div>
+      <div class="wz-line"></div>
+      <div class="wz-step" id="wz3">
+        <div class="wz-dot">3</div>
+        <span>Generando</span>
+      </div>
     </div>
 
-    <!-- Status panel (shown after submit) -->
+    <!-- ── STEP 1: Audio + prompt ── -->
+    <div id="panel-step1">
+      <div id="alertBox" class="d-none mb-3"></div>
+
+      <!-- Drop zone -->
+      <div class="upload-zone text-center p-5 mb-4" id="dropZone">
+        <i class="bi bi-cloud-arrow-up display-4 text-amber mb-2 d-block"></i>
+        <p class="text-white mb-1">Arrastra tu archivo de audio aquí</p>
+        <p class="text-soft small mb-3">WAV, MP3, OGG, FLAC o M4A · máx. 50 MB</p>
+        <button type="button" class="btn btn-glass btn-sm px-3" id="browseBtn">
+          <i class="bi bi-folder2-open me-1"></i>Explorar
+        </button>
+        <input type="file" id="audioInput" accept=".wav,.mp3,.ogg,.flac,.m4a" class="d-none"/>
+        <p id="fileName" class="text-amber small mt-2 mb-0 d-none"></p>
+      </div>
+
+      <!-- Prompt -->
+      <div class="mb-4">
+        <label class="form-label text-white">
+          Describe el estilo que quieres
+          <span class="text-soft" style="font-weight:400;"> — opcional, pero recomendado</span>
+        </label>
+        <textarea
+          id="promptInput"
+          class="form-control"
+          rows="3"
+          placeholder="Ej: quiero algo alegre de jazz con piano, energía suave y relajada…"
+          style="resize:vertical;"
+        ></textarea>
+        <small class="text-soft">
+          Describe el género, mood, energía e instrumento con tus propias palabras.
+          ByteBeat lo interpretará automáticamente.
+        </small>
+      </div>
+
+      <button class="btn btn-wood w-100 py-2 fs-5" id="nextBtn">
+        <i class="bi bi-arrow-right-circle me-2"></i>Siguiente
+      </button>
+    </div>
+
+    <!-- ── STEP 2: Review params ── -->
+    <div id="panel-step2">
+
+      <!-- Confidence feedback -->
+      <div id="confPanel" class="d-flex align-items-center gap-2 mb-4">
+        <span id="confBadge" class="conf-badge"></span>
+        <span id="confMsg" class="text-soft small"></span>
+      </div>
+
+      <div id="alertBox2" class="d-none mb-3"></div>
+
+      <!-- Genre + Mood (selects) -->
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label text-white-50">
+            Género
+            <span id="tag-genre" class="detect-tag no">auto</span>
+          </label>
+          <select class="form-select" id="genre">
+            <option value="ROCK">Rock</option>
+            <option value="POP" selected>Pop</option>
+            <option value="FUNK">Funk</option>
+            <option value="JAZZ">Jazz</option>
+            <option value="LATIN">Latín</option>
+            <option value="CLASSICAL">Clásica</option>
+            <option value="ELECTRONIC">Electrónica</option>
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label text-white-50">
+            Mood
+            <span id="tag-mood" class="detect-tag no">auto</span>
+          </label>
+          <select class="form-select" id="mood">
+            <option value="HAPPY" selected>Alegre</option>
+            <option value="SAD">Triste</option>
+            <option value="DARK">Oscuro</option>
+            <option value="RELAXED">Relajado</option>
+            <option value="TENSE">Tenso</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Energy (pills) -->
+      <div class="mb-3">
+        <label class="form-label text-white-50">
+          Energía
+          <span id="tag-energy" class="detect-tag no">auto</span>
+        </label>
+        <div class="pill-group" id="energyPills">
+          <div class="pill-opt" data-val="LOW">Baja</div>
+          <div class="pill-opt selected" data-val="MED">Media</div>
+          <div class="pill-opt" data-val="HIGH">Alta</div>
+        </div>
+      </div>
+
+      <!-- Instrument (pills) -->
+      <div class="mb-4">
+        <label class="form-label text-white-50">
+          Instrumento esperado
+          <span id="tag-instrument" class="detect-tag no">auto</span>
+        </label>
+        <div class="pill-group" id="instrumentPills">
+          <div class="pill-opt selected" data-val="GUITAR">Guitarra</div>
+          <div class="pill-opt" data-val="BASS">Bajo</div>
+          <div class="pill-opt" data-val="PIANO">Piano</div>
+        </div>
+      </div>
+
+      <!-- Sliders -->
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6">
+          <label class="form-label text-white-50 d-flex justify-content-between">
+            Temperatura <span id="tempVal" class="text-amber">0.9</span>
+          </label>
+          <input type="range" class="form-range" id="temperature" min="0.1" max="1.5" step="0.05" value="0.9"/>
+          <small class="text-soft">Controla la creatividad de la generación</small>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label text-white-50 d-flex justify-content-between">
+            Top-p <span id="topPVal" class="text-amber">0.9</span>
+          </label>
+          <input type="range" class="form-range" id="topP" min="0.1" max="1.0" step="0.05" value="0.9"/>
+          <small class="text-soft">Controla la diversidad de muestreo</small>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-glass px-4" id="backBtn">
+          <i class="bi bi-arrow-left me-1"></i>Anterior
+        </button>
+        <button class="btn btn-wood flex-fill py-2 fs-5" id="submitBtn">
+          <i class="bi bi-magic me-2"></i>Generar acompañamiento
+        </button>
+      </div>
+    </div>
+
+    <!-- ── STEP 3: Status ── -->
     <div id="statusPanel" class="card card-glass p-4 p-md-5 text-center">
       <h4 class="text-white mb-4">Procesando tu audio…</h4>
 
@@ -173,6 +322,7 @@
         <button class="btn btn-glass" onclick="location.reload()">Intentar de nuevo</button>
       </div>
     </div>
+
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>

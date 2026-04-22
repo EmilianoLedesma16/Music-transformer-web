@@ -7,6 +7,13 @@ let pollingIntervals = {};
 document.getElementById("logoutBtn").addEventListener("click", Auth.logout);
 document.getElementById("refreshBtn").addEventListener("click", loadCreaciones);
 
+// Cargar datos del usuario (nombre + rol)
+API.getMe().then(user => {
+  const greeting = document.getElementById("userGreeting");
+  if (user.name) { greeting.textContent = `Hola, ${user.name}`; greeting.classList.remove("d-none"); }
+  if (user.role === "admin") document.getElementById("adminBtn").classList.remove("d-none");
+}).catch(() => {});
+
 document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
   if (!pendingDeleteId) return;
   try {

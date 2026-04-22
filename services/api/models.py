@@ -22,6 +22,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)   # null para usuarios Google OAuth
     google_id     = Column(String(128), unique=True, nullable=True)
     avatar_url    = Column(String(512), nullable=True)
+    role          = Column(String(16),  nullable=False, default="user", server_default="user")
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -39,6 +40,7 @@ class Creacion(Base):
     audio_input_url     = Column(String(512), nullable=True)        # URL pública en Supabase
     genre               = Column(String(32),  nullable=False)
     mood                = Column(String(32),  nullable=False)
+    energy              = Column(String(8),   nullable=False, default="MED", server_default="MED")
     instrument          = Column(String(32),  nullable=False)
     temperature         = Column(Float,       default=0.9)
     top_p               = Column(Float,       default=0.9)

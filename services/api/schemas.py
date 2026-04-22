@@ -19,6 +19,7 @@ class UserResponse(BaseModel):
     email: str
     name: Optional[str] = None
     avatar_url: Optional[str] = None
+    role: str = "user"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -37,6 +38,7 @@ class CreacionResponse(BaseModel):
     audio_input_url: Optional[str] = None
     genre: str
     mood: str
+    energy: str = "MED"
     instrument: str
     temperature: float
     top_p: float

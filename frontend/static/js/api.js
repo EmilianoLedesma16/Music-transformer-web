@@ -47,5 +47,21 @@ const API = (() => {
   const deleteCreacion = (id) =>
     request("DELETE", `/creaciones/${id}`);
 
-  return { login, register, submitProcess, pollJob, listCreaciones, deleteCreacion };
+  const parsePrompt = (text) =>
+    request("POST", "/parse-prompt", { text });
+
+  const getMe = () =>
+    request("GET", "/me");
+
+  const adminListUsers = () =>
+    request("GET", "/admin/users");
+
+  const adminSetRole = (userId, role) =>
+    request("PATCH", `/admin/users/${userId}/role`, { role });
+
+  return {
+    login, register, submitProcess, pollJob,
+    listCreaciones, deleteCreacion, parsePrompt,
+    getMe, adminListUsers, adminSetRole,
+  };
 })();
