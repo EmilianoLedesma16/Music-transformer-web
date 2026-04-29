@@ -25,11 +25,11 @@ STUB_GENERATION = os.environ.get("STUB_GENERATION", "").lower() in ("1", "true",
 
 logger = logging.getLogger(__name__)
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-DATA_DIR        = Path("/app/data")
+# ── Paths (configurables via env para Colab/entornos no-Docker) ───────────────
+DATA_DIR        = Path(os.environ.get("DATA_DIR",        "/app/data"))
 MIDI_OUT_DIR    = DATA_DIR / "processed" / "output_midis"
 XML_OUT_DIR     = DATA_DIR / "output"    / "musicxml"
-CHECKPOINT_PATH = Path("/app/checkpoints/best_model.pt")
+CHECKPOINT_PATH = Path(os.environ.get("CHECKPOINT_PATH", "/app/checkpoints/best_model.pt"))
 
 for _d in (MIDI_OUT_DIR, XML_OUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
