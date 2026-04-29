@@ -10,3 +10,4 @@ basic-pitch==0.4.0
 pretty_midi==0.2.10
 numpy==1.26.4
 tqdm
+supabase==2.3.4

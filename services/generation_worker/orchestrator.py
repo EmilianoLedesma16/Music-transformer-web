@@ -88,6 +88,15 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
 
         # ── 1. Parsear MIDI de entrada ────────────────────────────────────
         update_creacion(creacion_id, progress_detail="Parseando MIDI de entrada…")
+
+        # Si midi_path es una URL, descargarlo a un archivo temporal
+        if midi_path.startswith("http://") or midi_path.startswith("https://"):
+            import tempfile, urllib.request
+            tmp = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
+            urllib.request.urlretrieve(midi_path, tmp.name)
+            midi_path = tmp.name
+            logger.info("Creacion %d — MIDI descargado desde URL a %s", creacion_id, midi_path)
+
         pm = pretty_midi.PrettyMIDI(midi_path)
         melody_inst, _ = select_tracks(pm)
         if melody_inst is None:

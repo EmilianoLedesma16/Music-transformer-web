@@ -17,11 +17,21 @@ def transcribe(creacion_id: int, audio_path: str, genre: str, mood: str,
 
     try:
         midi_path = audio_to_midi(audio_path, creacion_id)
-        update_creacion(creacion_id, midi_path=midi_path)
+
+        # Subir el MIDI a Supabase para que el generation_worker (Colab/remoto) pueda accederlo
+        from storage import upload_file
+        midi_url = upload_file(
+            midi_path,
+            f"inputs/{creacion_id}/melody.mid",
+            "audio/midi",
+        )
+        # Si la subida falla se usa la ruta local (fallback para workers en el mismo host)
+        task_midi_path = midi_url if midi_url else midi_path
+        update_creacion(creacion_id, midi_path=task_midi_path)
 
         celery_app.send_task(
             "generation_tasks.generate",
-            args=[creacion_id, midi_path, genre, mood, energy, instrument, temperature, top_p],
+            args=[creacion_id, task_midi_path, genre, mood, energy, instrument, temperature, top_p],
             queue="generation_queue",
         )
     except Exception as exc:
