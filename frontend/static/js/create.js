@@ -260,10 +260,30 @@ function startPolling(jobId) {
   }, 4000);
 }
 
+async function triggerDownload(url, filename) {
+  try {
+    const res  = await fetch(url);
+    const blob = await res.blob();
+    const a    = document.createElement("a");
+    a.href     = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    window.open(url, "_blank");
+  }
+}
+
 function showResults(job) {
   document.getElementById("resultLinks").classList.remove("d-none");
   const midiLink = document.getElementById("midiLink");
   const xmlLink  = document.getElementById("xmlLink");
-  if (job.midi_output_url) { midiLink.href = job.midi_output_url; midiLink.classList.remove("d-none"); }
-  if (job.xml_output_url)  { xmlLink.href  = job.xml_output_url;  xmlLink.classList.remove("d-none"); }
+  if (job.midi_output_url) {
+    midiLink.classList.remove("d-none");
+    midiLink.addEventListener("click", e => { e.preventDefault(); triggerDownload(job.midi_output_url, "acompanamiento.mid"); });
+  }
+  if (job.xml_output_url) {
+    xmlLink.classList.remove("d-none");
+    xmlLink.addEventListener("click", e => { e.preventDefault(); triggerDownload(job.xml_output_url, "partitura.xml"); });
+  }
 }

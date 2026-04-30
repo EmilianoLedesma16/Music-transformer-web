@@ -19,6 +19,7 @@ import librosa
 logger = logging.getLogger(__name__)
 
 VALID_INSTRUMENTS = {"piano", "guitar", "bass"}
+MIN_CONFIDENCE = 0.05
 
 # Palabras clave para filtrar etiquetas AudioSet por instrumento
 _KEYWORDS: dict[str, list[str]] = {
@@ -87,4 +88,8 @@ def classify_instrument(audio_path: str) -> tuple[str, bool]:
     logger.info("CNN14 scores: %s", {k: f"{v:.3f}" for k, v in scores.items()})
 
     detected = max(scores, key=scores.get)
+    if scores[detected] < MIN_CONFIDENCE:
+        logger.info("CNN14: ningún instrumento supera umbral %.2f — rechazando audio", MIN_CONFIDENCE)
+        return "unknown", False
+
     return detected, detected in VALID_INSTRUMENTS

@@ -19,14 +19,18 @@ def validate_instrument(creacion_id: int, audio_path: str, genre: str, mood: str
     update_creacion(creacion_id, detected_instrument=detected)
 
     if not is_valid:
-        update_creacion(
-            creacion_id,
-            status        = "FAILED",
-            error_message = (
-                f"Instrumento detectado '{detected}' no está soportado. "
-                "Solo se acepta piano, guitar o bass."
-            ),
-        )
+        if detected == "unknown":
+            msg = (
+                "No se detectó un instrumento válido en el audio. "
+                "Asegúrate de que la grabación contenga principalmente piano, guitarra o bajo. "
+                "Evita audios con mucho ruido de fondo, voces o batería."
+            )
+        else:
+            msg = (
+                f"Se detectó '{detected}', que no está soportado. "
+                "Solo se acepta piano, guitarra o bajo."
+            )
+        update_creacion(creacion_id, status="FAILED", error_message=msg)
         return
 
     celery_app.send_task(
