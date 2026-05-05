@@ -399,23 +399,16 @@ def tokens_to_musicxml(
     score.append(mel_part)
     score.append(acc_part)
 
+    from music21.musicxml.m21ToXml import ScoreExporter
+    import xml.etree.ElementTree as ET
     try:
-        score.write("musicxml", fp=str(output_path))
+        exporter = ScoreExporter(score)
+        root_element = exporter.parse()
+        xml_bytes = ET.tostring(root_element, encoding="unicode", xml_declaration=False)
+        xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
+        with open(str(output_path), "w", encoding="utf-8") as f:
+            f.write(xml_str)
     except Exception as e:
-        import warnings
-        warnings.warn(f"write() falló ({e}), intentando exportación sin beams…")
-        from music21.musicxml.m21ToXml import ScoreExporter
-        import xml.etree.ElementTree as ET
-        try:
-            exporter = ScoreExporter(score)
-            exporter.makeBeams = False
-            root_element = exporter.parse()
-            xml_bytes    = ET.tostring(root_element, encoding="unicode",
-                                       xml_declaration=False)
-            xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
-            with open(str(output_path), "w", encoding="utf-8") as f:
-                f.write(xml_str)
-        except Exception as e2:
-            raise RuntimeError(f"No se pudo exportar a MusicXML: {e} / {e2}") from e2
+        score.write("musicxml", fp=str(output_path))
 
     return score

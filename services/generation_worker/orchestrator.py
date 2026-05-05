@@ -152,11 +152,11 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
                         progress_detail=f"Generando acompañamiento ({genre} / {mood} / {instrument})…")
         gen_ids = generate(
             model, enc_ids, enc_mask, prompt, config, device,
-            max_new_tokens=1024,
+            max_new_tokens=512,
             temperature=temperature,
             top_p=top_p,
             top_k=50,
-            repetition_penalty=1.3,
+            repetition_penalty=1.7,
         )
 
         note_on_count = sum(1 for tid in gen_ids
