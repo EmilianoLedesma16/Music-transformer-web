@@ -20,15 +20,15 @@ from data.midi_tokenizer import (
 # ─────────────────────────────────────────────────────────────
 # Constantes de generación
 # ─────────────────────────────────────────────────────────────
-MAX_CONSEC_TIME_SHIFTS     = 4
+MAX_CONSEC_TIME_SHIFTS     = 3
 TIME_SHIFT_EXCESS_PENALTY  = 15.0
-NOTE_ON_SILENCE_BONUS      = 10.0
-SILENCE_BONUS_THRESHOLD    = 8
+NOTE_ON_SILENCE_BONUS      = 18.0
+SILENCE_BONUS_THRESHOLD    = 4
 MAX_POLYPHONY              = 3
 MAX_NOTE_OPEN_TICKS        = 64
 MIN_NEW_TOKENS             = 200
 MAX_NOTES_PER_TICK         = 2
-MIN_FORCED_TIME_SHIFT_TICKS = 4
+MIN_FORCED_TIME_SHIFT_TICKS = 1
 MAX_CONSEC_VELOCITY        = 2
 
 _NOTE_ON_IDS    = frozenset(TOKEN2ID[t] for t in NOTE_ON_TOKENS   if t in TOKEN2ID)
@@ -41,6 +41,32 @@ _LONG_TIME_SHIFT_IDS = frozenset(
     for i in range(MIN_FORCED_TIME_SHIFT_TICKS, len(TIME_SHIFT_TOKENS) + 1)
     if f"<TIME_SHIFT_{i}>" in TOKEN2ID
 )
+
+# Mapa de tonalidad → pitches de la escala (clases de nota 0-11)
+_SCALE_DEGREES = {
+    "MAJ": [0, 2, 4, 5, 7, 9, 11],
+    "MIN": [0, 2, 3, 5, 7, 8, 10],
+}
+_NOTE_NAMES = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"]
+
+def _build_out_of_scale_ids(key_token: str) -> frozenset:
+    try:
+        inner = key_token.strip("<>").replace("KEY_", "")
+        parts = inner.rsplit("_", 1)
+        root_name, mode = parts[0], parts[1]
+        root = _NOTE_NAMES.index(root_name)
+        scale_pcs = {(root + d) % 12 for d in _SCALE_DEGREES.get(mode, _SCALE_DEGREES["MAJ"])}
+        out_ids = set()
+        for t in NOTE_ON_TOKENS:
+            tid = TOKEN2ID.get(t)
+            if tid is None:
+                continue
+            pitch = int(t[len("<NOTE_ON_"):-1])
+            if (pitch % 12) not in scale_pcs:
+                out_ids.add(tid)
+        return frozenset(out_ids)
+    except Exception:
+        return frozenset()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -70,8 +96,10 @@ def top_k_top_p_sampling(logits: torch.Tensor, temperature: float = 1.0,
 
 def apply_repetition_penalty(logits: torch.Tensor, generated_ids: list,
                               penalty: float = 1.3) -> torch.Tensor:
-    seen = set(generated_ids[-32:]) & _NOTE_ON_IDS
-    for tid in seen:
+    window = generated_ids[-64:]
+    seen_note_on  = set(window) & _NOTE_ON_IDS
+    seen_note_off = set(window) & _NOTE_OFF_IDS
+    for tid in seen_note_on | seen_note_off:
         if logits[tid] > 0:
             logits[tid] /= penalty
         else:
@@ -96,18 +124,23 @@ def apply_silence_control(logits: torch.Tensor, consec_time_shifts: int,
 # Loop de generación
 # ─────────────────────────────────────────────────────────────
 
+_OUT_OF_SCALE_PENALTY = 3.0
+
 @torch.no_grad()
 def generate(model: "MusicTransformer", enc_ids: torch.Tensor,
              enc_mask: torch.Tensor, prompt_ids: list,
              config: ModelConfig, device: torch.device,
              max_new_tokens: int = 1024, temperature: float = 0.9,
              top_p: float = 0.9, top_k: int = 50,
-             repetition_penalty: float = 1.3) -> list:
+             repetition_penalty: float = 1.3,
+             key_token: str = "") -> list:
 
     model.eval()
     enc_ids  = enc_ids.unsqueeze(0).to(device)
     enc_mask = enc_mask.unsqueeze(0).to(device)
     memory   = model.encode(enc_ids, enc_mask)
+
+    _out_of_scale_ids = _build_out_of_scale_ids(key_token) if key_token else frozenset()
 
     gen_ids = list(prompt_ids)
     eos_id  = TOKEN2ID.get("<EOS>", 2)
@@ -190,6 +223,11 @@ def generate(model: "MusicTransformer", enc_ids: torch.Tensor,
         next_logits = apply_repetition_penalty(next_logits, gen_ids, penalty=repetition_penalty)
         next_logits = apply_silence_control(next_logits, consec_time_shifts, accumulated_silence_ticks)
 
+        if _out_of_scale_ids:
+            for tid in _out_of_scale_ids:
+                if next_logits[tid] > -float("inf"):
+                    next_logits[tid] -= _OUT_OF_SCALE_PENALTY
+
         next_id = top_k_top_p_sampling(
             next_logits, temperature=temperature, top_k=top_k, top_p=top_p
         )
@@ -236,6 +274,8 @@ def generate(model: "MusicTransformer", enc_ids: torch.Tensor,
                 open_notes.pop(pitch, None)
             except (ValueError, IndexError):
                 pass
+            consec_time_shifts        = 0
+            accumulated_silence_ticks = 0
 
         if next_id == eos_id:
             break

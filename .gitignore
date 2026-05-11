@@ -4,7 +4,7 @@
 
 # ── Repos ML externos (no suben aquí) ────────────────────────────────────────
 music-transformer/
-music-transformer-tests/
+music-transformers-tests/
 
 # ── Datos de runtime (generados al correr el sistema) ────────────────────────
 data/
@@ -33,4 +33,5 @@ env/
 
 # ── Módulos de front alternativos ────────────────────────────────────────────
 front_gerry/
+varios/
 

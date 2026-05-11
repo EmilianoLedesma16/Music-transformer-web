@@ -157,6 +157,7 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
             top_p=top_p,
             top_k=50,
             repetition_penalty=1.7,
+            key_token=key_token,
         )
 
         note_on_count = sum(1 for tid in gen_ids
