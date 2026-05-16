@@ -2,13 +2,29 @@
 .env
 /docs
 
-# ── Repos ML externos (no suben aquí) ────────────────────────────────────────
-music-transformer/
-music-transformers-tests/
+# ── Repo de referencia de Omar (no se despliega, solo lectura local) ─────────
+music-transformer-tests/
+
+# ── Archivos grandes / generados dentro de music-transformer/ ────────────────
+# El código fuente (music-transformer/src/) SÍ se trackea — es lo que Colab necesita.
+# Lo que sigue NO se sube:
+music-transformer/checkpoints/
+music-transformer/data/
+music-transformer/results/
+music-transformer/output_*/
+music-transformer/*.wav
+music-transformer/*.mp3
+music-transformer/*.mid
+music-transformer/*.pdf
+music-transformer/*.xml
+music-transformer/requirments.txt
+music-transformer/requirements.txt
 
 # ── Datos de runtime (generados al correr el sistema) ────────────────────────
 data/
 checkpoints/
+output_xml/
+output_midi/
 
 # ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
@@ -31,7 +47,6 @@ env/
 .idea/
 *.swp
 
-# ── Módulos de front alternativos ────────────────────────────────────────────
+# ── Módulos de front alternativos (legacy) ───────────────────────────────────
 front_gerry/
 varios/
-
