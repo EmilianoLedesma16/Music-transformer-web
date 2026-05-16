@@ -152,13 +152,41 @@ def run(creacion_id: int, midi_path: str, genre: str, mood: str,
                         progress_detail=f"Generando acompañamiento ({genre} / {mood} / {instrument})…")
         gen_ids = generate(
             model, enc_ids, enc_mask, prompt, config, device,
-            max_new_tokens=512,
+            max_new_tokens=1024,
             temperature=temperature,
             top_p=top_p,
             top_k=50,
-            repetition_penalty=1.7,
-            key_token=key_token,
+            repetition_penalty=1.3,
         )
+
+        # Clamp NOTE_ON/NOTE_OFF fuera del rango válido del instrumento a la octava más cercana
+        _INST_RANGE = {"PIANO": (21, 108), "GUITAR": (40, 88), "BASS": (28, 67)}
+        _pitch_lo, _pitch_hi = _INST_RANGE.get(instrument.upper(), (28, 108))
+
+        def _clamp(pitch):
+            while pitch > _pitch_hi:
+                pitch -= 12
+            while pitch < _pitch_lo:
+                pitch += 12
+            return pitch if _pitch_lo <= pitch <= _pitch_hi else None
+
+        clamped_ids = []
+        for tid in gen_ids:
+            tok = ID2TOKEN.get(tid, "")
+            if tok.startswith("<NOTE_ON_") or tok.startswith("<NOTE_OFF_"):
+                try:
+                    prefix = "<NOTE_ON_" if tok.startswith("<NOTE_ON_") else "<NOTE_OFF_"
+                    pitch = int(tok[len(prefix):-1])
+                    new_pitch = _clamp(pitch)
+                    if new_pitch is None:
+                        continue
+                    if new_pitch != pitch:
+                        new_tok = f"{prefix}{new_pitch}>"
+                        tid = TOKEN2ID.get(new_tok, tid)
+                except ValueError:
+                    pass
+            clamped_ids.append(tid)
+        gen_ids = clamped_ids
 
         note_on_count = sum(1 for tid in gen_ids
                             if ID2TOKEN.get(tid, "").startswith("<NOTE_ON_"))
