@@ -1,5 +1,54 @@
 services:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Servicios SIEMPRE activos (api + workers CPU + frontend)
+  # En modo cloud: conectan a Upstash/Neon vía .env
+  # En modo local: conectan a los contenedores db/redis de abajo
+  # ─────────────────────────────────────────────────────────────────────────────
+  api:
+    build: ./services/api
+    ports: ["8000:8000"]
+    env_file: .env
+    volumes:
+      - ./frontend:/app/frontend
+      - shared_data:/app/data
+    depends_on:
+      db:    {condition: service_healthy, required: false}
+      redis: {condition: service_healthy, required: false}
+    restart: on-failure
+
+  ml_worker:
+    build: ./services/ml_worker
+    env_file: .env
+    environment:
+      PYTHONPATH: "/app"
+    volumes:
+      - shared_data:/app/data
+      - panns_data:/root/panns_data    # persiste el checkpoint CNN14 (~325 MB)
+    depends_on:
+      db:    {condition: service_healthy, required: false}
+      redis: {condition: service_healthy, required: false}
+    restart: on-failure
+
+  transcription_worker:
+    build: ./services/transcription_worker
+    env_file: .env
+    environment:
+      PYTHONPATH: "/app/mt_src:/app"
+    volumes:
+      - shared_data:/app/data
+      - ./music-transformer/src:/app/mt_src
+    depends_on:
+      db:    {condition: service_healthy, required: false}
+      redis: {condition: service_healthy, required: false}
+    restart: on-failure
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Profile "local": Redis + Postgres + generation_worker en Docker.
+  # Activar con:  docker compose --profile local up -d
+  # Para GPU NVIDIA:  docker compose --profile local -f docker-compose.yml -f docker-compose.gpu.yml up -d
+  # ─────────────────────────────────────────────────────────────────────────────
   db:
+    profiles: ["local"]
     image: postgres:15
     ports: ["5432:5432"]
     environment:
@@ -15,6 +64,7 @@ services:
       retries: 10
 
   redis:
+    profiles: ["local"]
     image: redis:7-alpine
     ports: ["6379:6379"]
     healthcheck:
@@ -23,45 +73,8 @@ services:
       timeout: 3s
       retries: 10
 
-  api:
-    build: ./services/api
-    ports: ["8000:8000"]
-    env_file: .env
-    volumes:
-      - ./frontend:/app/frontend
-      - shared_data:/app/data
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
-    restart: on-failure
-
-  ml_worker:
-    build: ./services/ml_worker
-    env_file: .env
-    environment:
-      PYTHONPATH: "/app"
-    volumes:
-      - shared_data:/app/data
-      - panns_data:/root/panns_data    # persiste el checkpoint CNN14 (~325 MB)
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
-    restart: on-failure
-
-  transcription_worker:
-    build: ./services/transcription_worker
-    env_file: .env
-    environment:
-      PYTHONPATH: "/app/mt_src:/app"
-    volumes:
-      - shared_data:/app/data
-      - ./music-transformer/src:/app/mt_src
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
-    restart: on-failure
-
   generation_worker:
+    profiles: ["local"]
     build: ./services/generation_worker
     env_file: .env
     environment:
@@ -73,7 +86,7 @@ services:
       - ./music-transformer/src:/app/mt_src
       - ./music-transformer/data/tokens:/app/mt_data/tokens
     depends_on:
-      db: {condition: service_healthy}
+      db:    {condition: service_healthy}
       redis: {condition: service_healthy}
     restart: on-failure
 

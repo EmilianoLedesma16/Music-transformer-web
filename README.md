@@ -67,90 +67,141 @@ Infraestructura:
 
 ---
 
-## Prerrequisitos
+## Modos de ejecución
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac/Linux)
-- Git
-- Cuenta en [Supabase](https://supabase.com) (para storage de archivos)
-- Checkpoint del modelo: `music-transformer/checkpoints/best_model.pt` (no incluido en el repo — ver abajo)
+ByteBeat soporta dos modos según si tienes GPU local o no:
 
-No se necesita Python local para correr el proyecto — todo corre dentro de Docker.
+| | **Modo A: Sin GPU** | **Modo B: Con GPU local** |
+|---|---|---|
+| `generation_worker` corre en | Google Colab (T4 gratis) | Docker local (NVIDIA) |
+| Redis | Upstash (cloud, free tier) | Docker container |
+| PostgreSQL | Neon (cloud, free tier) | Docker container |
+| Supabase Storage | Sí (cloud) | Sí (cloud) |
+| Comando | `docker compose up -d` | `docker compose --profile local up -d` |
+
+Ambos modos comparten el mismo repo y el mismo `.env.example` con las dos plantillas comentadas. Eliges una según tu hardware.
 
 ---
 
-## Instalación desde cero
+## Prerrequisitos
 
-### 1. Clonar el repositorio
+**Para los dos modos:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- Git
+- Cuenta en [Supabase](https://supabase.com) (storage de archivos, free tier)
 
-```bash
-git clone https://github.com/TU_USUARIO/bytebeat.git
-cd bytebeat
-```
+**Solo Modo A (sin GPU local):**
+- Cuenta de Google (para Colab)
+- Cuenta en [Upstash](https://console.upstash.com) (Redis cloud, free)
+- Cuenta en [Neon](https://console.neon.tech) (Postgres cloud, free)
 
-### 2. Configurar el modelo
+**Solo Modo B (con GPU local):**
+- GPU NVIDIA con drivers + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
-El directorio `music-transformer/` no está en git (`.gitignore`) porque contiene el checkpoint del modelo (~400 MB). Debe copiarse manualmente:
+El código del modelo (`music-transformer/src/`) **ya viene en el repo**. Solo necesitas copiar el checkpoint `best_model.pt` (~500 MB) — pídelo al equipo ML.
 
-```
-music-transformer/
-├── checkpoints/
-│   └── best_model.pt          ← copiar aquí el checkpoint v2
-└── src/                       ← código fuente del modelo (configurar con el equipo ML)
-    ├── model/
-    │   ├── config.py
-    │   ├── transformer.py
-    │   └── inference.py
-    ├── data/
-    │   └── midi_tokenizer.py
-    └── utils/
-        └── tokens_to_musicxml.py
-```
+---
 
-### 3. Configurar variables de entorno
+## Instalación
+
+### Pasos comunes a los dos modos
+
+**1. Clonar el repo y configurar credenciales**
 
 ```bash
+git clone https://github.com/EmilianoLedesma16/Music-transformer-web.git
+cd Music-transformer-web
+git checkout testing
 cp .env.example .env
 ```
 
-Editar `.env` con tus valores reales (ver sección [Variables de entorno](#variables-de-entorno)).
+**2. Crear bucket en Supabase**
 
-Lo mínimo para levantar localmente:
-- `JWT_SECRET_KEY` → generar con `openssl rand -hex 32`
-- `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_BUCKET` → de tu proyecto Supabase
+1. [app.supabase.com](https://app.supabase.com) → tu proyecto → Storage
+2. New bucket `bytebeat`, marcar como **Public**
+3. Copiar URL y `service_role` key al `.env`
 
-### 4. Crear el bucket en Supabase
-
-1. Ir a [app.supabase.com](https://app.supabase.com) → tu proyecto → **Storage**
-2. Crear bucket llamado `bytebeat` → marcarlo como **Public**
-3. Copiar la URL del proyecto y el `service_role` key al `.env`
-
-### 5. Buildear las imágenes Docker
-
-> **IMPORTANTE:** buildear una por una para no saturar la RAM.
+**3. Generar JWT secret**
 
 ```bash
-docker compose build --no-cache api
-docker compose build --no-cache ml_worker
-docker compose build --no-cache transcription_worker
-docker compose build --no-cache generation_worker
+openssl rand -hex 32
+# Pegar el resultado en JWT_SECRET_KEY del .env
 ```
 
-Cada build tarda entre 2 y 10 minutos dependiendo de la conexión. El `generation_worker` es el más pesado (instala PyTorch + dependencias ML).
+**4. Copiar el checkpoint**
 
-### 6. Levantar el proyecto
+- **Modo A (Colab):** Subir `best_model.pt` a Google Drive (raíz)
+- **Modo B (GPU local):** Colocar en `music-transformer/checkpoints/best_model.pt`
+
+---
+
+### Modo A — Sin GPU (Colab)
+
+**1. Editar `.env`**: comenta el bloque "MODO B" y descomenta "MODO A". Llena las URLs de Upstash y Neon.
+
+**2. Buildear y levantar solo los servicios CPU:**
 
 ```bash
+docker compose build --no-cache api ml_worker transcription_worker
 docker compose up -d
 ```
 
-### 7. Verificar que todo esté corriendo
+Esto levanta `api`, `ml_worker`, `transcription_worker`. **No** levanta `db`, `redis` ni `generation_worker` (vienen del cloud).
+
+**3. Abrir el notebook de Colab** ([`notebooks/colab_generation_worker.ipynb`](notebooks/colab_generation_worker.ipynb)):
+
+- Subir a Colab → Entorno de ejecución → T4 GPU
+- Editar Celda 6 con tus credenciales (las mismas del `.env`)
+- Ejecutar las celdas en orden — la celda 7 se queda corriendo el worker
+
+**4. Verificar:** `docker compose ps` debe mostrar 3 servicios activos. En Colab debe aparecer `celery@... ready.`
+
+---
+
+### Modo B — GPU local
+
+**1. Editar `.env`**: deja el bloque "MODO B" como está (es el default).
+
+**2. Buildear todos los servicios:**
+
+```bash
+docker compose --profile local build --no-cache api
+docker compose --profile local build --no-cache ml_worker
+docker compose --profile local build --no-cache transcription_worker
+docker compose --profile local build --no-cache generation_worker
+```
+
+> Buildea uno por uno: el `generation_worker` instala PyTorch + CUDA y pesa ~4 GB.
+
+**3. Levantar con GPU:**
+
+```bash
+docker compose --profile local -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+Si **no** tienes GPU pero igual quieres correr todo local en CPU (lento, ~30-60 min por generación):
+
+```bash
+docker compose --profile local up -d
+```
+
+**4. Verificar GPU:**
+
+```bash
+docker compose exec generation_worker python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+```
+
+Debe imprimir `True` y el nombre de tu GPU.
+
+---
+
+### Verificar y abrir el frontend
 
 ```bash
 docker compose ps
 ```
 
-Deben aparecer 6 contenedores en estado `running` o `healthy`:
-`db`, `redis`, `api`, `ml_worker`, `transcription_worker`, `generation_worker`
+Abrir en el browser: **http://localhost:8000**
 
 ### 8. Abrir en el browser
 
@@ -211,9 +262,9 @@ La arquitectura de Celery permite separar el `generation_worker` en una máquina
 
 ```bash
 # En el servidor con GPU:
-git clone <repo> && cd bytebeat
+git clone <repo> && cd Music-transformer-web
 cp .env.example .env  # editar con credenciales de producción
-docker compose up -d
+docker compose --profile local -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 # Exponer públicamente (sin dominio propio):
 ngrok http 8000
@@ -357,10 +408,11 @@ bytebeat/
 ├── .env                         # NO se sube a git (en .gitignore)
 ├── .env.example                 # Plantilla con variables vacías
 ├── frontend/                    # Frontend estático (bind mount en Docker)
-├── music-transformer/           # NO está en git (.gitignore)
-│   ├── checkpoints/
-│   │   └── best_model.pt        # Checkpoint v2 del modelo (~400 MB)
-│   └── src/                     # Código fuente del modelo ML
+├── notebooks/
+│   └── colab_generation_worker.ipynb  # Worker GPU en Colab (Modo A)
+├── music-transformer/
+│   ├── src/                     # Código del modelo ML (SÍ en git)
+│   └── checkpoints/             # NO en git — colocar best_model.pt aquí (Modo B)
 └── services/
     ├── api/                     # FastAPI — API REST + auth + sirve el frontend
     │   ├── main.py
@@ -402,56 +454,17 @@ bytebeat/
 → Las credenciales de Supabase en `.env` son incorrectas. Los archivos quedan en disco dentro del contenedor. Recuperarlos con `docker compose cp` (ver sección de comandos útiles).
 
 **`FileNotFoundError: best_model.pt`**
-→ El checkpoint no está en `music-transformer/checkpoints/best_model.pt`. Ver paso 2 de instalación.
+→ El checkpoint no está en `music-transformer/checkpoints/best_model.pt`. Ver sección de instalación.
 
+**El worker de Colab dice `ENETUNREACH` o no se conecta**
+→ Estás usando un `.env` con URLs locales (`redis://redis:...`). Colab no puede llegarle a tu Docker. Comenta el bloque MODO B y descomenta MODO A con URLs de Upstash/Neon.
 
-# Para omi 
-1. Prerrequisitos del sistema (una sola vez)
+**`nvidia-smi` no funciona en el contenedor (Modo B)**
+→ Falta [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). En Ubuntu/Debian:
 
-Instalar los drivers de NVIDIA y el toolkit para Docker:
-
-
-# Verificar que la GPU es reconocida
-nvidia-smi
-Si ese comando funciona, los drivers están bien. Solo falta el nvidia-container-toolkit:
-
-
-# Ubuntu/Debian
+```bash
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
-2. Clonar y configurar el proyecto
-
-
-git clone <url-del-repo>
-cd music-transformer-web
-cp .env.example .env
-# editar .env con las credenciales de Supabase y JWT_SECRET_KEY
-Luego copiar manualmente el checkpoint y el código del modelo:
-
-
-music-transformer/checkpoints/best_model.pt
-music-transformer/src/  ← archivos del modelo ML
-3. Buildear los contenedores
-
-
-docker compose build --no-cache api
-docker compose build --no-cache ml_worker
-docker compose build --no-cache transcription_worker
-docker compose build --no-cache generation_worker   # este tarda más (~4 GB imagen PyTorch+CUDA)
-4. Levantar
-
-
-docker compose up -d
-5. Verificar que el generation_worker ve la GPU
-
-
-docker compose exec generation_worker python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
-Debe imprimir True y el nombre de la GPU, por ejemplo NVIDIA GeForce RTX 3080.
-
-6. Abrir en el browser
-
-
-http://localhost:8000
-A partir de ahí el flujo es el mismo que en CPU pero la generación tarda 1-2 minutos en vez de 30-60.
+```
