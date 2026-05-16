@@ -68,6 +68,12 @@ _ENERGY_LEVEL = {"LOW": 0.2, "MED": 0.5, "HIGH": 0.8}
 def run(creacion_id: int, midi_path: str, genre: str, mood: str,
         energy: str, instrument: str, temperature: float, top_p: float) -> None:
 
+    # Normalizar inputs a uppercase para alinear con el vocabulario del modelo
+    genre      = genre.upper()
+    mood       = mood.upper()
+    energy     = energy.upper()
+    instrument = instrument.upper()
+
     update_creacion(creacion_id, status="GENERATING",
                     progress_detail="Iniciando pipeline de generación…")
 
